@@ -1,6 +1,15 @@
+/* ── Shell: sidebar + chat column ── */
+.shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
 .container {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-width: 0;
   height: 100vh;
   background: var(--background);
 }

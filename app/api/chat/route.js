@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { retrieveContext } from '@/lib/rag';
+import { retrieveContext, retrieveJeeContext, JEE_SEAT_TYPE, JEE_GENDER } from '@/lib/rag';
 import { SYSTEM_PROMPT } from '@/lib/system-prompt';
 import { checkRateLimit } from '@/lib/ratelimit';
 import { checkCache, storeCache } from '@/lib/semantic-cache';
@@ -45,22 +45,32 @@ ${userMessages}
 JSON schema (null for anything not mentioned):
 {
   "rank": <integer or null>,
-  "exam": <"TGEAPCET" | null>,
-  "category": <"OC"|"BC-A"|"BC-B"|"BC-C"|"BC-D"|"BC-E"|"SC-I"|"SC-II"|"SC-III"|"ST"|"EWS" | null>,
+  "exam": <"TGEAPCET" | "JEE" | null>,
+  "category": <category code or null — see rules>,
   "gender": <"boys"|"girls" | null>,
   "branch_preference": <plain English or null>,
   "location_preference": <city/district or null>
 }
 
-Mapping rules:
+Exam mapping:
+- "eamcet / eapcet / tgeapcet / Telangana EAPCET" → "TGEAPCET"
+- "jee / jee main / jee advanced / josaa / iit / nit / iiit / mains rank / CRL" → "JEE"
+
+Category mapping when exam is TGEAPCET (Telangana categories):
 - "backward class A / BC-A / BCA" → "BC-A" (same for B C D E)
 - "scheduled caste / SC" → "SC-I" unless II or III specified
 - "scheduled tribe / ST / tribal" → "ST"
 - "general / open / unreserved" → "OC"
 - "EWS / economically weaker" → "EWS"
+
+Category mapping when exam is JEE (JoSAA seat types):
+- "general / open / unreserved / OC" → "OPEN"
+- "OBC / OBC-NCL / backward" → "OBC-NCL"
+- "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"
+
+Other:
 - "girl / female / she / woman" → "girls"; "boy / male / he / man" → "boys"
-- "five hundred" → 500; "1000" → 1000
-- "eamcet / eapcet / tgeapcet" → "TGEAPCET"`;
+- "five hundred" → 500; "1000" → 1000`;
 
   try {
     const result = await model.generateContent(prompt);
@@ -97,8 +107,9 @@ export async function POST(req) {
 
   // 3. Semantic param extraction from full conversation
   const params = await extractParams(history || [], message);
-  const { rank, category, gender, branch_preference, location_preference } = params;
+  const { rank, exam, category, gender, branch_preference, location_preference } = params;
 
+  const isJee = exam === 'JEE';
   const hasRank = rank != null;
   const hasAllRequired = hasRank && category && gender;
 
@@ -120,10 +131,23 @@ export async function POST(req) {
     }
   }
 
-  // 5. Decide retrieval strategy
+  // 5. Decide retrieval strategy (exam-aware: JEE/JoSAA vs TGEAPCET)
   let contextBlock = '';
+  let contextLabel = 'TGEAPCET 2025 official data — eligible colleges only';
   try {
-    if (hasAllRequired) {
+    if (isJee) {
+      contextLabel = 'JEE Main 2025 JoSAA official data — eligible programs only';
+      if (hasAllRequired) {
+        const seatType = JEE_SEAT_TYPE[String(category).toUpperCase()] || null;
+        const genderVal = JEE_GENDER[gender] ?? null;
+        const parts = ['JEE Main 2025 JoSAA', category, gender, `rank ${rank}`, 'eligible colleges closing rank'];
+        if (branch_preference) parts.push(branch_preference);
+        if (location_preference) parts.push(location_preference);
+        ({ contextBlock } = await retrieveJeeContext(parts.join(' '), 12, { rank, seatType, gender: genderVal }));
+      } else if (!hasRank) {
+        ({ contextBlock } = await retrieveJeeContext(message, 6));
+      }
+    } else if (hasAllRequired) {
       const fieldName = CATEGORY_FIELD[category]?.[gender];
       const whereFilter = fieldName ? { [fieldName]: { '$gte': rank } } : null;
       const parts = ['TGEAPCET 2025', category, gender, `rank ${rank}`, 'eligible colleges last rank cutoff'];
@@ -140,7 +164,7 @@ export async function POST(req) {
 
   // 6. Build augmented message
   const augmentedMessage = contextBlock
-    ? `RETRIEVED CONTEXT (TGEAPCET 2025 official data — eligible colleges only):\n${contextBlock}\n\nUSER MESSAGE:\n${message}`
+    ? `RETRIEVED CONTEXT (${contextLabel}):\n${contextBlock}\n\nUSER MESSAGE:\n${message}`
     : message;
 
   // 7. Build clean chat history
@@ -177,7 +201,7 @@ export async function POST(req) {
           }
           // Store in semantic cache after successful completion
           if (hasAllRequired && cacheEmbedding && fullText.length > 50) {
-            storeCache(cacheEmbedding, { rank, category, gender }, fullText);
+            storeCache(cacheEmbedding, { exam, rank, category, gender }, fullText);
           }
         } catch (err) {
           controller.enqueue(encoder.encode(`\n\n_Error generating response: ${err.message}_`));

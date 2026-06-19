@@ -1,16 +1,18 @@
 /**
- * Ingestion pipeline: XLSX → Gemini embeddings → Supabase pgvector
+ * Ingestion pipeline: XLSX → local all-MiniLM-L6-v2 embeddings → Supabase pgvector
+ *
+ * Embeddings run on-device with the same model ChromaDB uses by default
+ * (transformers.js, 384-dim) — no API key, no rate limits, fast batch embedding.
  *
  * Usage:
  *   node scripts/ingest.mjs
  *
  * Prerequisites:
  *   Set in .env:
- *     GEMINI_API_KEY=...
  *     SUPABASE_URL=...
  *     SUPABASE_SERVICE_ROLE_KEY=...
  *
- * Run the SQL in supabase/schema.sql in your Supabase dashboard first.
+ * Apply the migrations in supabase/migrations/ (or run supabase/schema.sql) first.
  */
 
 import 'dotenv/config';
@@ -20,7 +22,7 @@ import { fileURLToPath } from 'url';
 import pkg from 'xlsx';
 const { readFile, utils: xlsxUtils } = pkg;
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { embedBatch } from '../lib/embeddings.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '../public/data/tgeamcet');
@@ -135,20 +137,13 @@ function buildChunkText(rec) {
 async function main() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
     console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env');
     process.exit(1);
   }
-  if (!geminiKey) {
-    console.error('Missing GEMINI_API_KEY in .env');
-    process.exit(1);
-  }
 
   const supabase = createClient(supabaseUrl, supabaseKey);
-  const genAI = new GoogleGenerativeAI(geminiKey);
-  const embModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
 
   // 1. Find XLSX files
   const xlsxFiles = readdirSync(DATA_DIR).filter(f => /\.(xlsx|xls)$/i.test(f));
@@ -196,21 +191,17 @@ async function main() {
   }
   console.log(`Ingesting ${pending.length} new records (skipping ${existingIds.size} existing)...`);
 
-  // 5. Embed and upsert in batches (Gemini API: up to 100 texts per batch)
-  const BATCH = 50;
+  // 5. Embed and upsert in batches. Local model embeds the whole batch in one
+  //    forward pass — much faster than one network request per row.
+  const BATCH = 64;
   let done = existingIds.size;
 
   for (let i = 0; i < pending.length; i += BATCH) {
     const slice = pending.slice(i, i + BATCH);
     const texts = slice.map(buildChunkText);
 
-    // Embed all texts in the batch
-    const embeddings = await Promise.all(
-      texts.map(async text => {
-        const result = await embModel.embedContent(text);
-        return result.embedding.values;
-      })
-    );
+    // Embed all texts in the batch locally (384-dim, all-MiniLM-L6-v2)
+    const embeddings = await embedBatch(texts);
 
     const rows = slice.map((rec, j) => ({
       chunk_id: `${rec.inst_code}_${rec.branch_code}_${rec.phase.replace(/\s+/g, '')}`,

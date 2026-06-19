@@ -4,13 +4,13 @@
 create extension if not exists vector;
 
 -- 2. Create the table
---    embedding: 768 dims (Google text-embedding-004)
+--    embedding: 384 dims (local all-MiniLM-L6-v2 — ChromaDB's default model)
 --    metadata:  JSONB with all rank fields + college info
 create table if not exists tgeapcet_2025 (
   id        bigserial primary key,
   chunk_id  text unique not null,
   content   text not null,
-  embedding vector(768),
+  embedding vector(384),
   metadata  jsonb not null default '{}'
 );
 
@@ -18,7 +18,7 @@ create table if not exists tgeapcet_2025 (
 --    rank_field: e.g. 'oc_boys', 'bca_girls', 'st_boys' (null = no filter)
 --    min_rank:   student's rank — returns only colleges where cutoff >= rank (eligible)
 create or replace function match_tgeapcet_2025(
-  query_embedding vector(768),
+  query_embedding vector(384),
   match_count     int,
   rank_field      text default null,
   min_rank        int  default null
@@ -45,9 +45,8 @@ as $$
   limit match_count;
 $$;
 
--- 4. IVFFlat index for fast ANN search (build after ingesting data)
---    Adjust `lists` based on row count: ~sqrt(total_rows)
-create index if not exists tgeapcet_2025_embedding_idx
-  on tgeapcet_2025
-  using ivfflat (embedding vector_cosine_ops)
-  with (lists = 100);
+-- 4. No ANN index — with only ~2,820 rows, exact (sequential) cosine search is
+--    sub-millisecond and always correct. An IVFFlat/HNSW index only probes a
+--    subset of clusters and tanks recall once the rank-eligibility filter is
+--    applied. Add an ANN index (built AFTER loading data) only if this table
+--    grows to tens of thousands of rows.
