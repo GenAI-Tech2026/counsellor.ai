@@ -32,7 +32,13 @@ export default function Sidebar({
   loading = false,
   collapsed = false,
   onToggle,
+  mobileOpen = false,
+  onCloseMobile,
 }) {
+  // Navigating on mobile should also close the drawer.
+  const handleNew = () => { onNew?.(); onCloseMobile?.(); };
+  const handleSelect = (id) => { onSelect?.(id); onCloseMobile?.(); };
+
   // ── Search state ──
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -95,7 +101,7 @@ export default function Sidebar({
           <button
             type="button"
             className={`${styles.iconButton} ${styles.railNew}`}
-            onClick={onNew}
+            onClick={handleNew}
             aria-label="New chat"
             title="New chat"
           >
@@ -107,7 +113,10 @@ export default function Sidebar({
   }
 
   return (
-    <aside className={styles.sidebar} aria-label="Chat sidebar">
+    <aside
+      className={`${styles.sidebar} ${mobileOpen ? styles.mobileOpen : ''}`}
+      aria-label="Chat sidebar"
+    >
       {/* ── Header ── */}
       <header className={styles.header}>
         <div className={styles.brand}>
@@ -118,12 +127,21 @@ export default function Sidebar({
         </div>
         <button
           type="button"
-          className={styles.iconButton}
+          className={`${styles.iconButton} ${styles.collapseToggle}`}
           onClick={onToggle}
           aria-label="Collapse sidebar"
           title="Collapse sidebar"
         >
           <PanelLeftClose size={20} />
+        </button>
+        <button
+          type="button"
+          className={`${styles.iconButton} ${styles.mobileClose}`}
+          onClick={onCloseMobile}
+          aria-label="Close menu"
+          title="Close menu"
+        >
+          <X size={20} />
         </button>
       </header>
 
@@ -154,7 +172,7 @@ export default function Sidebar({
       )}
 
       {/* ── New chat ── */}
-      <button type="button" className={styles.newChat} onClick={onNew} aria-label="New chat">
+      <button type="button" className={styles.newChat} onClick={handleNew} aria-label="New chat">
         <Plus size={18} className={styles.newChatIcon} />
         <span>New chat</span>
       </button>
@@ -184,11 +202,11 @@ export default function Sidebar({
                     role="button"
                     tabIndex={0}
                     aria-current={isActive ? 'true' : undefined}
-                    onClick={() => onSelect?.(r.id)}
+                    onClick={() => handleSelect(r.id)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        onSelect?.(r.id);
+                        handleSelect(r.id);
                       }
                     }}
                     title={r.title}
@@ -241,11 +259,11 @@ export default function Sidebar({
                   role="button"
                   tabIndex={0}
                   aria-current={isActive ? 'true' : undefined}
-                  onClick={() => onSelect?.(c.id)}
+                  onClick={() => handleSelect(c.id)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      onSelect?.(c.id);
+                      handleSelect(c.id);
                     }
                   }}
                   title={c.title}

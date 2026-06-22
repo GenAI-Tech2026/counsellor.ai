@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import styles from './chat.module.css';
-import { Send, User, Bot, Loader2, ArrowLeft, BookOpen, ThumbsUp, ThumbsDown, Copy, Check, Download } from 'lucide-react';
+import { Send, User, Bot, Loader2, ArrowLeft, BookOpen, ThumbsUp, ThumbsDown, Copy, Check, Download, Menu } from 'lucide-react';
 import Link from 'next/link';
 import Sidebar from './Sidebar';
 import { createClient } from '@/lib/supabase/client';
@@ -78,6 +78,7 @@ export default function ChatPage() {
   const [convLoading, setConvLoading] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Per-message UI state, keyed by message index (reset when messages reset).
   const [feedback, setFeedback] = useState({}); // index -> 'up' | 'down'
@@ -431,11 +432,28 @@ export default function ChatPage() {
         loading={convLoading}
         collapsed={collapsed}
         onToggle={() => setCollapsed(c => !c)}
+        mobileOpen={mobileNavOpen}
+        onCloseMobile={() => setMobileNavOpen(false)}
       />
+      {mobileNavOpen && (
+        <div
+          className={styles.mobileBackdrop}
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
 
       <div className={styles.container}>
         {/* Header */}
         <header className={styles.header}>
+          <button
+            type="button"
+            className={styles.menuButton}
+            onClick={() => { setCollapsed(false); setMobileNavOpen(true); }}
+            aria-label="Open menu"
+          >
+            <Menu size={20} />
+          </button>
           <Link href="/" className={styles.backButton} aria-label="Back to home">
             <ArrowLeft size={20} />
           </Link>
