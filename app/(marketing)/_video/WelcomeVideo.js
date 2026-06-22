@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import ProductVideo from './ProductVideo';
+import ProductVideoPortrait from './ProductVideoPortrait';
 import styles from '../marketing.module.css';
 
 // @remotion/player is browser-only — load it without SSR.
@@ -18,6 +19,16 @@ export default function WelcomeVideo() {
   const sceneRef = useRef(null);
   const playerRef = useRef(null);
   const [progress, setProgress] = useState(0);
+  const [portrait, setPortrait] = useState(false);
+
+  // Use a portrait composition on phones so it fills the screen and stays legible.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const apply = () => setPortrait(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -64,11 +75,11 @@ export default function WelcomeVideo() {
         <div className={styles.videoFrame}>
           <Player
             ref={playerRef}
-            component={ProductVideo}
+            component={portrait ? ProductVideoPortrait : ProductVideo}
             durationInFrames={DURATION}
             fps={30}
-            compositionWidth={1280}
-            compositionHeight={720}
+            compositionWidth={portrait ? 720 : 1280}
+            compositionHeight={portrait ? 1280 : 720}
             style={{ width: '100%', height: '100%' }}
             controls={false}
             clickToPlay={false}

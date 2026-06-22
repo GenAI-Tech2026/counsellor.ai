@@ -1094,7 +1094,18 @@
   .stat { flex-basis: 40%; min-width: 120px; }
   /* Shorter scrub track on phones — less scrolling to play the video. */
   .scrollScene { height: 200vh; }
-  .scrollSticky { padding: 1rem; }
+  /* Full-screen, edge-to-edge video on mobile (no padded card). */
+  .scrollSticky { padding: 0; height: 100vh; }
+  .scrollSticky .videoFrame {
+    max-width: none;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;        /* fill the viewport instead of locking 16/9 */
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--canvas);  /* blends with the composition's paper bg */
+  }
 }
 
 @media (max-width: 560px) {
