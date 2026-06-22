@@ -327,8 +327,19 @@ export default function ChatPage() {
     sendMessage(input.trim());
   };
 
-  // ── Copy a bot reply to the clipboard ──
+  // Show a brief corner notification that auto-dismisses.
+  const showToast = useCallback((message) => {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  // ── Copy a bot reply to the clipboard (signed-in only) ──
   const handleCopy = useCallback(async (text, index) => {
+    if (!user) {
+      showToast('Sign in to copy responses.');
+      return;
+    }
     try {
       await navigator.clipboard.writeText(text);
       setCopiedIndex(index);
@@ -336,7 +347,7 @@ export default function ChatPage() {
     } catch {
       // Clipboard may be unavailable (e.g. insecure context); ignore.
     }
-  }, []);
+  }, [user, showToast]);
 
   // ── Log thumbs up/down feedback on a bot reply ──
   const handleFeedback = useCallback((index, rating) => {
@@ -374,13 +385,6 @@ export default function ChatPage() {
       // Feedback logging is best-effort.
     });
   }, [feedback, messages]);
-
-  // Show a brief corner notification that auto-dismisses.
-  const showToast = useCallback((message) => {
-    setToast(message);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 4000);
-  }, []);
 
   // ── Download the current conversation as a Markdown file ──
   const handleExport = useCallback(() => {
@@ -517,18 +521,16 @@ export default function ChatPage() {
                         >
                           <ThumbsDown size={15} />
                         </button>
-                        {/* Copy is for signed-in users only. */}
-                        {user && (
-                          <button
-                            type="button"
-                            className={styles.actionButton}
-                            onClick={() => handleCopy(msg.text, index)}
-                            aria-label="Copy response"
-                            title="Copy response"
-                          >
-                            {copiedIndex === index ? <Check size={15} /> : <Copy size={15} />}
-                          </button>
-                        )}
+                        {/* Copy: signed-in copies; guests get a sign-in nudge. */}
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={() => handleCopy(msg.text, index)}
+                          aria-label="Copy response"
+                          title="Copy response"
+                        >
+                          {copiedIndex === index ? <Check size={15} /> : <Copy size={15} />}
+                        </button>
                       </div>
                     )}
                   </div>
