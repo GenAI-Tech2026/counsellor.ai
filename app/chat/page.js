@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import styles from './chat.module.css';
-import { Send, User, Bot, Loader2, ArrowLeft, BookOpen } from 'lucide-react';
+import { Send, User, Bot, Loader2, ArrowLeft, BookOpen, ThumbsUp, ThumbsDown, Copy, Check, Download } from 'lucide-react';
 import Link from 'next/link';
 import Sidebar from './Sidebar';
 import { createClient } from '@/lib/supabase/client';
@@ -35,6 +35,25 @@ function parseSources(text) {
   return { clean, sources: [...new Set(sources)] };
 }
 
+// Build the behind-the-scenes context line appended to outgoing messages,
+// e.g. "Context: User is OC Male with Rank 5000 for TGEAPCET." Only includes
+// the fields the user has actually saved.
+function buildProfileContext(profile) {
+  if (!profile) return '';
+  const traits = [];
+  if (profile.category) traits.push(profile.category);
+  if (profile.gender) traits.push(profile.gender === 'female' ? 'Female' : 'Male');
+
+  let sentence = '';
+  if (traits.length) sentence = `User is ${traits.join(' ')}`;
+  if (profile.rank != null && profile.rank !== '') {
+    sentence += sentence ? ` with Rank ${profile.rank}` : `User has Rank ${profile.rank}`;
+  }
+  if (profile.exam) sentence += sentence ? ` for ${profile.exam}` : `User is sitting ${profile.exam}`;
+
+  return sentence ? `Context: ${sentence}.` : '';
+}
+
 function userFromSession(sessionUser) {
   if (!sessionUser) return null;
   const meta = sessionUser.user_metadata || {};
@@ -54,10 +73,19 @@ export default function ChatPage() {
 
   // Auth + conversation state
   const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [convLoading, setConvLoading] = useState(false);
   const [activeId, setActiveId] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
+
+  // Per-message UI state, keyed by message index (reset when messages reset).
+  const [feedback, setFeedback] = useState({}); // index -> 'up' | 'down'
+  const [copiedIndex, setCopiedIndex] = useState(null);
+
+  // Transient corner notification (e.g. prompting guests to sign in).
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
 
   // activeId is needed synchronously inside async send flow.
   const activeIdRef = useRef(null);
@@ -103,6 +131,17 @@ export default function ChatPage() {
     }
   }, [user, loadConversations]);
 
+  // ── Load the saved profile (for behind-the-scenes context injection) ──
+  useEffect(() => {
+    if (!user) { setProfile(null); return; }
+    let active = true;
+    fetch('/api/profile')
+      .then(res => res.json())
+      .then(data => { if (active) setProfile(data.profile || null); })
+      .catch(() => { if (active) setProfile(null); });
+    return () => { active = false; };
+  }, [user]);
+
   // ── Persist a message to the active conversation (logged-in only) ──
   const persistMessage = useCallback(async (convId, role, content, sources = []) => {
     if (!convId) return;
@@ -142,6 +181,8 @@ export default function ChatPage() {
     setActiveId(null);
     activeIdRef.current = null;
     setMessages([GREETING]);
+    setFeedback({});
+    setCopiedIndex(null);
     setInput('');
     inputRef.current?.focus();
   }, [isLoading, isStreaming]);
@@ -151,6 +192,8 @@ export default function ChatPage() {
     setActiveId(id);
     activeIdRef.current = id;
     setMessages([]);
+    setFeedback({});
+    setCopiedIndex(null);
     setConvLoading(false);
     try {
       const res = await fetch(`/api/conversations/${id}`);
@@ -191,12 +234,17 @@ export default function ChatPage() {
     const convId = await ensureConversation();
     if (convId) persistMessage(convId, 'user', text, []);
 
+    // Quietly append the saved profile so the AI always knows the student's
+    // details, without changing what's shown or stored as their message.
+    const profileContext = buildProfileContext(profile);
+    const apiMessage = profileContext ? `${text}\n\n${profileContext}` : text;
+
     let res;
     try {
       res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history }),
+        body: JSON.stringify({ message: apiMessage, history }),
       });
     } catch {
       setIsLoading(false);
@@ -209,8 +257,18 @@ export default function ChatPage() {
 
     if (!res.ok || !res.body) {
       setIsLoading(false);
+      // Surface the API's standardized error: { error: { code, message, retryAfter? } }
       let errMsg = 'Something went wrong. Please try again.';
-      if (res.status === 429) errMsg = 'Too many messages — please wait a moment before trying again.';
+      try {
+        const data = await res.json();
+        if (data?.error?.message) {
+          errMsg = data.error.message;
+        } else if (res.status === 429) {
+          errMsg = 'Too many messages — please wait a moment before trying again.';
+        }
+      } catch {
+        if (res.status === 429) errMsg = 'Too many messages — please wait a moment before trying again.';
+      }
       setMessages(prev => [...prev, { role: 'model', text: errMsg, sources: [] }]);
       return;
     }
@@ -269,6 +327,94 @@ export default function ChatPage() {
     sendMessage(input.trim());
   };
 
+  // ── Copy a bot reply to the clipboard ──
+  const handleCopy = useCallback(async (text, index) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex(c => (c === index ? null : c)), 1500);
+    } catch {
+      // Clipboard may be unavailable (e.g. insecure context); ignore.
+    }
+  }, []);
+
+  // ── Log thumbs up/down feedback on a bot reply ──
+  const handleFeedback = useCallback((index, rating) => {
+    const current = feedback[index];
+    if (current === rating) {
+      // Clicking the active rating again clears the local selection.
+      setFeedback(prev => {
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
+      return;
+    }
+
+    setFeedback(prev => ({ ...prev, [index]: rating }));
+
+    const msg = messages[index];
+    if (!msg) return;
+    // Find the user question that prompted this reply, for evaluation context.
+    let query = '';
+    for (let i = index - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') { query = messages[i].text; break; }
+    }
+
+    fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rating,
+        message_text: msg.text,
+        user_query: query,
+        conversation_id: activeIdRef.current,
+      }),
+    }).catch(() => {
+      // Feedback logging is best-effort.
+    });
+  }, [feedback, messages]);
+
+  // Show a brief corner notification that auto-dismisses.
+  const showToast = useCallback((message) => {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  // ── Download the current conversation as a Markdown file ──
+  const handleExport = useCallback(() => {
+    // Downloading is a signed-in feature; nudge guests to sign in.
+    if (!user) {
+      showToast('Sign in to download your chat.');
+      return;
+    }
+    const turns = messages.filter(m => !m.greeting && m.text);
+    if (turns.length === 0) return;
+
+    const body = turns.map(m => {
+      const who = m.role === 'user' ? 'You' : 'Counsellor';
+      let block = `**${who}:**\n\n${m.text}`;
+      if (m.sources?.length) block += `\n\n_Sources: ${m.sources.join(', ')}_`;
+      return block;
+    }).join('\n\n---\n\n');
+
+    const content =
+      `# Admission Mantrana — Counselling Session\n\n` +
+      `_Exported ${new Date().toLocaleString()}_\n\n---\n\n` +
+      body + '\n';
+
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `counselling-session-${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [messages, user, showToast]);
+
   return (
     <div className={styles.shell}>
       <Sidebar
@@ -300,6 +446,17 @@ export default function ChatPage() {
             <span className={styles.dot} />
             Live
           </div>
+          <button
+            type="button"
+            className={styles.exportButton}
+            onClick={handleExport}
+            disabled={!hasUserMessages}
+            aria-label="Download chat"
+            title="Download chat (.md)"
+          >
+            <Download size={16} />
+            <span>Download</span>
+          </button>
         </header>
 
         {/* Messages */}
@@ -334,6 +491,44 @@ export default function ChatPage() {
                         {msg.sources.map((src, i) => (
                           <span key={i} className={styles.chip}>{src}</span>
                         ))}
+                      </div>
+                    )}
+
+                    {/* Feedback + copy actions (bot replies only) */}
+                    {!isUser && !msg.greeting && !msg.streaming && msg.text && (
+                      <div className={styles.messageActions}>
+                        <button
+                          type="button"
+                          className={`${styles.actionButton} ${feedback[index] === 'up' ? styles.actionButtonUp : ''}`}
+                          onClick={() => handleFeedback(index, 'up')}
+                          aria-label="Good response"
+                          aria-pressed={feedback[index] === 'up'}
+                          title="Good response"
+                        >
+                          <ThumbsUp size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className={`${styles.actionButton} ${feedback[index] === 'down' ? styles.actionButtonDown : ''}`}
+                          onClick={() => handleFeedback(index, 'down')}
+                          aria-label="Bad response"
+                          aria-pressed={feedback[index] === 'down'}
+                          title="Bad response"
+                        >
+                          <ThumbsDown size={15} />
+                        </button>
+                        {/* Copy is for signed-in users only. */}
+                        {user && (
+                          <button
+                            type="button"
+                            className={styles.actionButton}
+                            onClick={() => handleCopy(msg.text, index)}
+                            aria-label="Copy response"
+                            title="Copy response"
+                          >
+                            {copiedIndex === index ? <Check size={15} /> : <Copy size={15} />}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -397,6 +592,14 @@ export default function ChatPage() {
             Data from TGEAPCET 2025 last rank statements & JEE Main 2025 JoSAA (final round). For reference only.
           </p>
         </footer>
+
+        {/* Transient sign-in nudge */}
+        {toast && (
+          <div className={styles.toast} role="status">
+            <span>{toast}</span>
+            <Link href="/login" className={styles.toastLink}>Sign in</Link>
+          </div>
+        )}
       </div>
     </div>
   );

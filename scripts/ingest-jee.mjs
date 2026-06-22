@@ -31,6 +31,13 @@ import { embedBatch } from '../lib/embeddings.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FILE = join(__dirname, '../public/data/jeemains/JEE_JoSAA_2025_AllRounds_ORCR.xlsx');
 
+// Structured facets stamped onto every chunk for cross-source filtering in
+// lib/rag.js (see the chunk_metadata migration). JoSAA is a single all-India
+// counselling process, so there is no per-state facet.
+const EXAM = 'JEE';
+const YEAR = 2025;
+const STATE = 'All India';
+
 const ROUND_LABEL = {
   Round1: 'Round 1', Round2: 'Round 2', Round3: 'Round 3',
   Round4: 'Round 4', Round5: 'Round 5', Round6_Final: 'Round 6 (Final)',
@@ -185,7 +192,7 @@ async function main() {
       chunk_id: chunkId(rec),
       content: texts[j],
       embedding: embeddings[j],
-      metadata: { source: 'JoSAA 2025', ...rec },
+      metadata: { source: 'JoSAA 2025', exam: EXAM, year: YEAR, state: STATE, ...rec },
     }));
 
     const { error } = await supabase.from('jee_josaa_2025').upsert(rows, { onConflict: 'chunk_id' });

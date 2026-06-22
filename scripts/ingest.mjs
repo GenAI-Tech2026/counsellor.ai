@@ -27,6 +27,13 @@ import { embedBatch } from '../lib/embeddings.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '../public/data/tgeamcet');
 
+// Structured facets stamped onto every chunk so the retriever can filter the
+// corpus hard before similarity ranking (see lib/rag.js + the chunk_metadata
+// migration). TGEAPCET is the Telangana engineering common entrance test.
+const EXAM = 'TGEAPCET';
+const YEAR = 2025;
+const STATE = 'Telangana';
+
 const HEADER_MAP = {
   'inst code': 'inst_code',
   'institute name': 'inst_name',
@@ -87,32 +94,56 @@ function phaseFromFilename(filename) {
   return 'Unknown Phase';
 }
 
+function normHeader(s) {
+  return String(s ?? '').toLowerCase().replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Parse one TGEAPCET sheet into clean, row-by-row records.
+ *
+ * Reads the sheet as a raw 2-D grid (header:1) rather than trusting row 0 to be
+ * the header — official statements sometimes prepend a title-banner row. We
+ * locate the real header by finding the row whose first cell is "Inst Code",
+ * map each header column to a canonical field, then emit ONE self-contained
+ * record per data row with its columns kept intact (no merged-cell jumble).
+ */
 function parseXlsx(filepath, phase) {
   const wb = readFile(filepath);
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = xlsxUtils.sheet_to_json(ws, { defval: '' });
+  const grid = xlsxUtils.sheet_to_json(ws, { header: 1, defval: '' });
 
-  if (rows.length === 0) throw new Error(`No data rows in ${filepath}`);
+  if (grid.length === 0) throw new Error(`No rows in ${filepath}`);
 
-  const rawKeys = Object.keys(rows[0]);
-  const keyMap = {};
-  for (const raw of rawKeys) {
-    const norm = raw.toLowerCase().replace(/[\n\r]+/g, ' ').trim();
-    const mapped = HEADER_MAP[norm];
-    if (mapped) keyMap[raw] = mapped;
-  }
+  // Find the header row (skips any title-banner rows above it).
+  const headerIdx = grid.findIndex(r => normHeader(r[0]) === 'inst code');
+  if (headerIdx === -1) throw new Error(`Could not locate header row in ${filepath}`);
+
+  // Map each column index → canonical field name.
+  const headerRow = grid[headerIdx];
+  const colMap = {}; // colIndex -> field
+  headerRow.forEach((raw, idx) => {
+    const mapped = HEADER_MAP[normHeader(raw)];
+    if (mapped) colMap[idx] = mapped;
+  });
 
   const records = [];
-  for (const row of rows) {
+  for (let i = headerIdx + 1; i < grid.length; i++) {
+    const row = grid[i];
+    if (!row || row.length === 0) continue;
+
     const rec = { phase };
-    for (const [raw, field] of Object.entries(keyMap)) {
-      const val = String(row[raw] ?? '').trim();
+    for (const [idx, field] of Object.entries(colMap)) {
+      const cell = row[idx];
+      const val = String(cell ?? '').trim();
       if (RANK_FIELDS.includes(field)) {
+        // A rank cell may arrive as a number or a string; '-' / '' means "no
+        // allotment in this category".
         rec[field] = val && val !== '-' ? parseInt(val, 10) || 0 : 0;
       } else {
-        rec[field] = val || '';
+        rec[field] = val;
       }
     }
+    // Drop blank/banner/summary rows: a real record has a clean institute code.
     if (!rec.inst_code || !/^[A-Z]{3,6}$/.test(rec.inst_code)) continue;
     records.push(rec);
   }
@@ -208,6 +239,8 @@ async function main() {
       content: texts[j],
       embedding: embeddings[j],
       metadata: {
+        // Structured facets for cross-source filtering (exam/year/state).
+        exam: EXAM, year: YEAR, state: STATE,
         phase: rec.phase, inst_code: rec.inst_code, inst_name: rec.inst_name,
         place: rec.place, dist_code: rec.dist_code, co_ed: rec.co_ed,
         col_type: rec.col_type, branch_code: rec.branch_code,

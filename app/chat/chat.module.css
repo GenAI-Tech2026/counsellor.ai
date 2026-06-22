@@ -283,6 +283,122 @@
   font-weight: 500;
 }
 
+/* ── Message actions (feedback + copy) ── */
+.messageActions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.messageBot:hover .messageActions,
+.messageActions:focus-within {
+  opacity: 1;
+}
+
+.actionButton {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.actionButton:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+}
+.actionButtonUp {
+  opacity: 1;
+  color: var(--success, #10b981);
+}
+.actionButtonUp:hover {
+  color: var(--success, #10b981);
+}
+.actionButtonDown {
+  opacity: 1;
+  color: var(--accent, #f43f5e);
+}
+.actionButtonDown:hover {
+  color: var(--accent, #f43f5e);
+}
+/* Keep actions visible once a rating is chosen, even without hover. */
+.messageBot .messageActions:has(.actionButtonUp),
+.messageBot .messageActions:has(.actionButtonDown) {
+  opacity: 1;
+}
+
+/* ── Toast (corner sign-in nudge) ── */
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 340px;
+  padding: 0.75rem 0.875rem 0.75rem 1rem;
+  border-radius: 12px;
+  background: rgba(30, 32, 36, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  font-size: 0.85rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.toastLink {
+  flex-shrink: 0;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary, #8b5cf6), var(--accent, #f43f5e));
+  color: white;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+.toastLink:hover { opacity: 0.9; }
+
+/* ── Header export button ── */
+.exportButton {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.exportButton:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+.exportButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ── Input area ── */
 .inputArea {
   margin-top: auto;
