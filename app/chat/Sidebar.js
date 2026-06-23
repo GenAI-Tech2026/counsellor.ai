@@ -10,12 +10,12 @@ import {
   MessageSquare,
   Trash2,
   Loader2,
-  LogOut,
   UserCog,
   Search,
   X,
 } from 'lucide-react';
 import styles from './sidebar.module.css';
+import SignOutButton from '../components/SignOutButton';
 
 function initialOf(user) {
   const base = (user?.name || user?.email || '?').trim();
@@ -285,12 +285,7 @@ export default function Sidebar({
             <UserCog size={16} />
             <span>My details</span>
           </Link>
-          <form action="/auth/signout" method="post" className={styles.signOutForm}>
-            <button type="submit" className={styles.signOutButton} aria-label="Sign out">
-              <LogOut size={16} />
-              <span>Sign out</span>
-            </button>
-          </form>
+          <SignOutButton className={styles.signOutButton} />
         </footer>
       )}
     </aside>

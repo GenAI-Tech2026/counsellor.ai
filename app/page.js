@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import styles from './page.module.css';
-import { Sparkles, ArrowRight, LogIn, LogOut } from 'lucide-react';
+import { Sparkles, ArrowRight, LogIn } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
+import SignOutButton from './components/SignOutButton';
 
 export default async function Home() {
   const supabase = await createClient();
@@ -17,12 +18,7 @@ export default async function Home() {
             <span className={styles.authEmail}>
               {user.user_metadata?.name || user.email}
             </span>
-            <form action="/auth/signout" method="post">
-              <button type="submit" className={styles.authButton}>
-                <LogOut size={16} />
-                Sign out
-              </button>
-            </form>
+            <SignOutButton className={styles.authButton} />
           </>
         ) : (
           <Link href="/login" className={styles.authButton}>
