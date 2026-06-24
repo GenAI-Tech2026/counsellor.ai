@@ -22,6 +22,38 @@ function initialOf(user) {
   return base ? base.charAt(0).toUpperCase() : '?';
 }
 
+function startOfDay(value) {
+  const d = new Date(value);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Bucket conversations (already newest-first) into dated sections, like the
+// "Today / Yesterday" groupings in modern chat apps. Empty groups are dropped.
+function groupConversations(conversations) {
+  const today = startOfDay(new Date());
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const weekAgo = new Date(today);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+
+  const buckets = { today: [], yesterday: [], week: [], older: [] };
+  for (const c of conversations) {
+    const day = c.updated_at ? startOfDay(c.updated_at) : null;
+    if (day && day.getTime() === today.getTime()) buckets.today.push(c);
+    else if (day && day.getTime() === yesterday.getTime()) buckets.yesterday.push(c);
+    else if (day && day >= weekAgo) buckets.week.push(c);
+    else buckets.older.push(c);
+  }
+
+  return [
+    ['Today', buckets.today],
+    ['Yesterday', buckets.yesterday],
+    ['Previous 7 days', buckets.week],
+    ['Earlier', buckets.older],
+  ].filter(([, items]) => items.length > 0);
+}
+
 export default function Sidebar({
   conversations = [],
   activeId = null,
@@ -225,10 +257,8 @@ export default function Sidebar({
           </nav>
         </div>
       ) : (
-      /* ── Recent list ── */
+      /* ── Recent list, grouped by date ── */
       <div className={styles.listSection}>
-        <p className={styles.sectionLabel}>Recent</p>
-
         <nav className={styles.list} aria-label="Recent conversations">
           {loading ? (
             <div className={styles.loadingWrap}>
@@ -250,41 +280,46 @@ export default function Sidebar({
           ) : conversations.length === 0 ? (
             <p className={styles.empty}>No chats yet — start a new conversation.</p>
           ) : (
-            conversations.map((c) => {
-              const isActive = c.id === activeId;
-              return (
-                <div
-                  key={c.id}
-                  className={`${styles.row} ${isActive ? styles.rowActive : ''}`}
-                  role="button"
-                  tabIndex={0}
-                  aria-current={isActive ? 'true' : undefined}
-                  onClick={() => handleSelect(c.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      handleSelect(c.id);
-                    }
-                  }}
-                  title={c.title}
-                >
-                  <MessageSquare size={16} className={styles.rowIcon} />
-                  <span className={styles.rowTitle}>{c.title || 'Untitled chat'}</span>
-                  <button
-                    type="button"
-                    className={styles.deleteButton}
-                    aria-label={`Delete chat: ${c.title || 'Untitled chat'}`}
-                    title="Delete chat"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDelete?.(c.id);
-                    }}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              );
-            })
+            groupConversations(conversations).map(([label, items]) => (
+              <div key={label} className={styles.group}>
+                <p className={styles.groupLabel}>{label}</p>
+                {items.map((c) => {
+                  const isActive = c.id === activeId;
+                  return (
+                    <div
+                      key={c.id}
+                      className={`${styles.row} ${isActive ? styles.rowActive : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-current={isActive ? 'true' : undefined}
+                      onClick={() => handleSelect(c.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSelect(c.id);
+                        }
+                      }}
+                      title={c.title}
+                    >
+                      <MessageSquare size={16} className={styles.rowIcon} />
+                      <span className={styles.rowTitle}>{c.title || 'Untitled chat'}</span>
+                      <button
+                        type="button"
+                        className={styles.deleteButton}
+                        aria-label={`Delete chat: ${c.title || 'Untitled chat'}`}
+                        title="Delete chat"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete?.(c.id);
+                        }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ))
           )}
         </nav>
       </div>

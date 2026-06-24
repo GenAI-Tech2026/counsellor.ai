@@ -2,6 +2,7 @@
 .shell {
   display: flex;
   height: 100vh;
+  height: 100dvh; /* track the visible viewport on mobile (address bar / keyboard) */
   overflow: hidden;
   background: var(--canvas);
 }
@@ -12,6 +13,7 @@
   flex: 1;
   min-width: 0;
   height: 100vh;
+  height: 100dvh;
   position: relative;
   background: var(--canvas);
 }
@@ -435,62 +437,90 @@
   cursor: not-allowed;
 }
 
-/* ── Input area ── */
+/* ── Input area (docked under a live chat) ── */
 .inputArea {
   margin-top: auto;
-  padding: 0 1.5rem 1.5rem;
-  background: transparent;
+  padding: 0.5rem 1.5rem 1.25rem;
+  background: linear-gradient(to top, var(--canvas) 55%, transparent);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
   z-index: 10;
 }
 
-.inputForm {
-  display: flex;
-  align-items: center;
+/* ── Composer: an auto-growing card with a toolbar ── */
+.composer {
   width: 100%;
   max-width: 760px;
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  padding: 0.5rem 0.5rem 0.5rem 1rem;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  border-radius: var(--r-xl);
+  padding: 0.75rem 0.85rem 0.6rem;
   box-shadow: var(--shadow-sm);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
-.inputForm:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+.composer:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 4px var(--accent-ring), var(--shadow-md);
 }
 
-.inputField {
-  flex: 1;
-  background: transparent;
+.composerInput {
+  width: 100%;
+  resize: none;
   border: none;
-  color: var(--ink);
-  font-size: 0.95rem;
   outline: none;
+  background: transparent;
+  color: var(--ink);
   font-family: inherit;
-  min-width: 0;
-  min-height: 44px;
+  font-size: 1rem;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0.35rem 0.4rem 0.15rem;
 }
-.inputField::placeholder { color: var(--ink-faint); font-weight: 400; }
+.composerInput::placeholder { color: var(--ink-faint); font-weight: 400; }
+.composerInput:focus-visible { box-shadow: none; }
+.composerInput:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.composerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.35rem;
+}
+.composerHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.composerHint svg { color: var(--accent); flex-shrink: 0; }
 
 .sendButton {
   background: var(--accent);
   color: #fff;
   border: none;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--r-md);
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.18s ease;
+  transition: background 0.18s ease, transform 0.12s ease;
   flex-shrink: 0;
 }
+.sendButton:active:not(:disabled) { transform: scale(0.92); }
 .sendButton:hover:not(:disabled) {
   background: var(--accent-hover);
 }
@@ -500,34 +530,113 @@
   cursor: not-allowed;
 }
 
-/* ── Example question chips ── */
-.examples {
+/* ── Hero / empty state ── */
+.hero {
+  flex: 1;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 2rem 1.25rem;
+  z-index: 1;
+}
+.heroInner {
   width: 100%;
   max-width: 760px;
-  justify-content: center;
-  padding: 0.5rem 0 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  /* Lift the block slightly above dead-center for a more composed look. */
+  margin-bottom: 4vh;
+  animation: fadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.exampleChip {
-  background: var(--surface);
-  color: var(--ink-soft);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  padding: 0.5rem 0.875rem;
-  font-size: 0.8rem;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
-  text-align: left;
-  box-shadow: var(--shadow-xs);
+.heroMark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(135deg, var(--accent), var(--accent-press));
+  color: #fff;
+  box-shadow: var(--shadow-md);
+  margin-bottom: 1.25rem;
 }
-.exampleChip:hover {
-  background: var(--accent-soft);
+
+.heroTitle {
+  font-family: var(--font-serif);
+  font-size: clamp(1.6rem, 4.5vw, 2.4rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+.heroSub {
+  margin-top: 0.6rem;
+  font-size: 0.98rem;
+  color: var(--ink-muted);
+  line-height: 1.5;
+  max-width: 30rem;
+}
+
+.heroComposer {
+  width: 100%;
+  margin-top: 1.75rem;
+}
+
+/* ── Suggestion cards ── */
+.suggestions {
+  width: 100%;
+  margin-top: 1.25rem;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+.suggestionCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  text-align: left;
+  padding: 1rem;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.16s ease, border-color 0.16s ease,
+    box-shadow 0.16s ease, background 0.16s ease;
+}
+.suggestionCard:hover:not(:disabled) {
+  transform: translateY(-2px);
   border-color: var(--accent-line);
-  color: var(--accent-press);
+  box-shadow: var(--shadow-sm);
+}
+.suggestionCard:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.suggestionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  margin-bottom: 0.2rem;
+}
+.suggestionTitle {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.suggestionDesc {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  line-height: 1.45;
 }
 
 .disclaimer {
@@ -571,10 +680,24 @@
 }
 @keyframes backdropIn { from { opacity: 0; } to { opacity: 1; } }
 
+@media (max-width: 760px) {
+  /* Stack the jump-start cards into a single column on small screens. */
+  .suggestions { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 640px) {
   .header { padding: 0.75rem 1rem; gap: 0.6rem; }
   .chatArea { padding: 1.5rem 0.75rem; }
-  .inputArea { padding: 0 1rem 1rem; }
+  /* Respect the iPhone home-indicator safe area below the input. */
+  .inputArea { padding: 0.5rem 0.75rem calc(0.85rem + env(safe-area-inset-bottom)); }
   .bubble { max-width: 90%; }
   .headerTitle h2 { font-size: 1rem; }
+
+  .hero { padding: 1.5rem 1rem; }
+  .heroComposer { margin-top: 1.25rem; }
+  .heroMark { width: 56px; height: 56px; }
+
+  /* 16px keeps iOS Safari from auto-zooming the field when it's tapped. */
+  .composerInput { font-size: 16px; }
+  .composer { border-radius: var(--r-lg); padding: 0.65rem 0.7rem 0.5rem; }
 }

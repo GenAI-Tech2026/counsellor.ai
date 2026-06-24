@@ -4,7 +4,10 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import styles from './chat.module.css';
-import { Send, User, Bot, Loader2, ArrowLeft, BookOpen, ThumbsUp, ThumbsDown, Copy, Check, Download, Menu } from 'lucide-react';
+import {
+  ArrowUp, User, Bot, Loader2, BookOpen, ThumbsUp, ThumbsDown, Copy, Check,
+  Download, Menu, Sparkles, GraduationCap, GitCompare, Compass,
+} from 'lucide-react';
 import Link from 'next/link';
 import Sidebar from './Sidebar';
 import { createClient } from '@/lib/supabase/client';
@@ -18,12 +21,27 @@ const GREETING = {
   greeting: true,
 };
 
-const EXAMPLE_QUESTIONS = [
-  'TGEAPCET rank 5000, OC category, male — what CSE colleges can I get?',
-  'JEE Main rank 8000, OPEN, gender-neutral — which IITs/NITs for CSE?',
-  'Show ECE options for BC-B female with TGEAPCET rank 8000',
-  'JEE rank 15000, OBC-NCL male — Mechanical at NITs?',
-  'Top Hyderabad colleges for TGEAPCET rank 3000, SC, male',
+// Hero "jump-start" cards shown on an empty chat. Each fills the composer with a
+// ready-to-send prompt so newcomers don't face a blank box.
+const SUGGESTIONS = [
+  {
+    icon: GraduationCap,
+    title: 'Find my colleges',
+    desc: 'Share your exam & rank — get a college list within reach.',
+    prompt: 'I have a TGEAPCET rank of 5000 (OC, male). Which CSE colleges can I get?',
+  },
+  {
+    icon: GitCompare,
+    title: 'Compare branches',
+    desc: 'CSE vs ECE vs Mechanical — see what fits your rank.',
+    prompt: 'Compare CSE, ECE and Mechanical options for TGEAPCET rank 8000, BC-B.',
+  },
+  {
+    icon: Compass,
+    title: 'Plan by category',
+    desc: 'Options matched to your category, gender & exam.',
+    prompt: 'JEE Main rank 15000, OBC-NCL male — which NIT branches are realistic?',
+  },
 ];
 
 function parseSources(text) {
@@ -229,6 +247,7 @@ export default function ChatPage() {
 
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+    if (inputRef.current) inputRef.current.style.height = 'auto';
     setIsLoading(true);
 
     // Make sure a conversation exists, then persist the user's message.
@@ -328,6 +347,36 @@ export default function ChatPage() {
     sendMessage(input.trim());
   };
 
+  // Auto-grow the composer as the student types (capped so it never eats the view).
+  const handleComposerChange = (e) => {
+    setInput(e.target.value);
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
+
+  // Enter sends; Shift+Enter inserts a newline (standard chat affordance).
+  const handleComposerKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  // Drop a hero suggestion into the composer and focus it (ready to send/edit).
+  const fillPrompt = useCallback((prompt) => {
+    setInput(prompt);
+    const el = inputRef.current;
+    if (el) {
+      el.focus();
+      el.style.height = 'auto';
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+      // Place the caret at the end so editing feels natural.
+      const len = prompt.length;
+      requestAnimationFrame(() => el.setSelectionRange(len, len));
+    }
+  }, []);
+
   // Show a brief corner notification that auto-dismisses.
   const showToast = useCallback((message) => {
     setToast(message);
@@ -420,6 +469,37 @@ export default function ChatPage() {
     URL.revokeObjectURL(url);
   }, [messages, user, showToast]);
 
+  // Shared composer — used centered in the hero and docked during a chat.
+  const composer = (
+    <form onSubmit={handleSubmit} className={styles.composer}>
+      <textarea
+        ref={inputRef}
+        value={input}
+        onChange={handleComposerChange}
+        onKeyDown={handleComposerKeyDown}
+        placeholder="Ask anything — your exam, rank and category…"
+        className={styles.composerInput}
+        rows={1}
+        disabled={isLoading || isStreaming}
+        autoFocus
+      />
+      <div className={styles.composerBar}>
+        <span className={styles.composerHint}>
+          <Sparkles size={13} aria-hidden="true" />
+          TGEAPCET 2025 · JEE Main (JoSAA)
+        </span>
+        <button
+          type="submit"
+          className={styles.sendButton}
+          disabled={!input.trim() || isLoading || isStreaming}
+          aria-label="Send message"
+        >
+          <ArrowUp size={18} />
+        </button>
+      </div>
+    </form>
+  );
+
   return (
     <div className={styles.shell}>
       <Sidebar
@@ -454,9 +534,6 @@ export default function ChatPage() {
           >
             <Menu size={20} />
           </button>
-          <Link href="/" className={styles.backButton} aria-label="Back to home">
-            <ArrowLeft size={20} />
-          </Link>
           <div className={styles.headerTitle}>
             <Bot size={24} className={styles.headerIcon} />
             <div>
@@ -481,6 +558,8 @@ export default function ChatPage() {
           </button>
         </header>
 
+        {hasUserMessages ? (
+        <>
         {/* Messages */}
         <main className={styles.chatArea}>
           <div className={styles.messagesList}>
@@ -573,45 +652,52 @@ export default function ChatPage() {
           </div>
         </main>
 
-        {/* Input */}
+        {/* Docked input */}
         <footer className={styles.inputArea}>
-          <form onSubmit={handleSubmit} className={styles.inputForm}>
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="Type your rank, question, or 'hi' to start…"
-              className={styles.inputField}
-              disabled={isLoading || isStreaming}
-              autoFocus
-            />
-            <button
-              type="submit"
-              className={styles.sendButton}
-              disabled={!input.trim() || isLoading || isStreaming}
-              aria-label="Send"
-            >
-              <Send size={18} />
-            </button>
-          </form>
-          {!hasUserMessages && !isLoading && !isStreaming && (
-            <div className={styles.examples}>
-              {EXAMPLE_QUESTIONS.map((q, i) => (
-                <button
-                  key={i}
-                  className={styles.exampleChip}
-                  onClick={() => sendMessage(q)}
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          )}
+          {composer}
           <p className={styles.disclaimer}>
             Data from TGEAPCET 2025 last rank statements & JEE Main 2025 JoSAA (final round). For reference only.
           </p>
         </footer>
+        </>
+        ) : (
+        /* ── Hero / empty state ── */
+        <main className={styles.hero}>
+          <div className={styles.heroInner}>
+            <span className={styles.heroMark} aria-hidden="true">
+              <Bot size={30} />
+            </span>
+            <h1 className={styles.heroTitle}>What can I help you with today?</h1>
+            <p className={styles.heroSub}>
+              Tell me your exam and rank — I&apos;ll map out the colleges within reach.
+            </p>
+
+            <div className={styles.heroComposer}>{composer}</div>
+
+            <div className={styles.suggestions}>
+              {SUGGESTIONS.map(({ icon: Icon, title, desc, prompt }) => (
+                <button
+                  key={title}
+                  type="button"
+                  className={styles.suggestionCard}
+                  onClick={() => fillPrompt(prompt)}
+                  disabled={isLoading || isStreaming}
+                >
+                  <span className={styles.suggestionIcon}>
+                    <Icon size={18} />
+                  </span>
+                  <span className={styles.suggestionTitle}>{title}</span>
+                  <span className={styles.suggestionDesc}>{desc}</span>
+                </button>
+              ))}
+            </div>
+
+            <p className={styles.disclaimer}>
+              Data from TGEAPCET 2025 last rank statements & JEE Main 2025 JoSAA (final round). For reference only.
+            </p>
+          </div>
+        </main>
+        )}
 
         {/* Transient sign-in nudge */}
         {toast && (
