@@ -357,11 +357,6 @@ function userFromSession(sessionUser) {
   };
 }
 
-// localStorage keys — the guided-flow answers live here so they survive reloads
-// and tab switches for everyone (guests included), independent of the server.
-const LS_PROFILE = 'counsellor:profile';
-const LS_SKIPPED = 'counsellor:skipped';
-
 export default function ChatPage() {
   const supabase = useMemo(() => createClient(), []);
 
@@ -390,10 +385,6 @@ export default function ChatPage() {
   const [skipped, setSkipped] = useState({});
   const [rankDraft, setRankDraft] = useState('');
   const [popupDismissedAt, setPopupDismissedAt] = useState(-1);
-
-  // True once we've restored saved answers from localStorage. The save effects
-  // wait for this so they never overwrite stored values with the initial blanks.
-  const [hydrated, setHydrated] = useState(false);
 
   // Tracks the last-seen exam so we can re-open the guided flow when it changes.
   const prevExamRef = useRef(undefined);
@@ -460,62 +451,9 @@ export default function ChatPage() {
     return () => sub.subscription.unsubscribe();
   }, [supabase]);
 
-  // ── Restore saved answers from localStorage once, on mount ──
-  // setState lives in an async callback so the effect body never updates state
-  // synchronously (avoids the cascading-render lint, mirroring #18).
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      let storedProfile = null;
-      let storedSkipped = null;
-      try {
-        const rawProfile = localStorage.getItem(LS_PROFILE);
-        if (rawProfile) {
-          const p = JSON.parse(rawProfile);
-          if (p && typeof p === 'object') storedProfile = p;
-        }
-        const rawSkipped = localStorage.getItem(LS_SKIPPED);
-        if (rawSkipped) {
-          const s = JSON.parse(rawSkipped);
-          if (s && typeof s === 'object') storedSkipped = s;
-        }
-      } catch {
-        // Corrupt/blocked storage — start fresh.
-      }
-      if (!active) return;
-      if (storedProfile) setProfile(storedProfile);
-      if (storedSkipped) setSkipped(storedSkipped);
-      setHydrated(true);
-    })();
-    return () => { active = false; };
-  }, []);
-
-  // ── Persist answers to localStorage (after hydration, so we never clobber) ──
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (profile && Object.keys(profile).length > 0) {
-        localStorage.setItem(LS_PROFILE, JSON.stringify(profile));
-      } else {
-        localStorage.removeItem(LS_PROFILE);
-      }
-    } catch {
-      // Storage unavailable (private mode / quota) — non-fatal.
-    }
-  }, [profile, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (Object.keys(skipped).length > 0) {
-        localStorage.setItem(LS_SKIPPED, JSON.stringify(skipped));
-      } else {
-        localStorage.removeItem(LS_SKIPPED);
-      }
-    } catch {
-      // Non-fatal.
-    }
-  }, [skipped, hydrated]);
+  // No browser persistence: the guided-flow answers (exam/rank/category/gender)
+  // are intentionally NOT saved to localStorage. Every page load and every new
+  // chat starts blank — nothing pre-stored is rendered.
 
   // ── Load the conversation list whenever the user changes ──
   const loadConversations = useCallback(async () => {
@@ -548,10 +486,9 @@ export default function ChatPage() {
   }, [user, loadConversations]);
 
   // ── Seed from the server profile when signed in ──
-  // We never wipe here: guests keep their localStorage answers, and a logged-in
-  // user's freshly-entered (local) answers always win over the stored server
-  // copy — the server only fills in fields the student hasn't set this session.
-  // Sign-out clearing is handled in the auth listener above.
+  // Guests never get pre-filled (no browser storage). For a signed-in user, the
+  // account's saved profile is merged in, but anything they enter this session
+  // wins over the stored copy. Sign-out clearing is handled in the auth listener.
   useEffect(() => {
     if (!user) return undefined;
     let active = true;
@@ -571,7 +508,7 @@ export default function ChatPage() {
           });
         }
       } catch {
-        // Keep whatever we already have (localStorage / in-memory).
+        // Keep whatever we already have in memory this session.
       }
     })();
     return () => { active = false; };
@@ -641,8 +578,13 @@ export default function ChatPage() {
     setFeedback({});
     setCopiedIndex(null);
     setInput('');
+    // A new chat is fully blank — drop the previous profile/answers too, so
+    // nothing pre-stored is carried over.
+    setProfile(null);
+    prevExamRef.current = undefined;
     setSkipped({});
     setRankDraft('');
+    setPopupDismissedAt(-1);
     inputRef.current?.focus();
   }, [isLoading, isStreaming]);
 
