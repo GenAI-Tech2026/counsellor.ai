@@ -18,7 +18,7 @@ const fraunces = Fraunces({
 });
 
 export const metadata = {
-  title: "Admission Mantrana — AI Admission Counsellor",
+  title: "counsa.ai — AI Admission Counsellor",
   description:
     "Calm, personalized guidance for TGEAPCET & JEE college admissions, powered by AI.",
 };

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import styles from './chat.module.css';
 import {
   ArrowUp, User, Bot, Loader2, BookOpen, ThumbsUp, ThumbsDown, Copy, Check,
-  Download, Menu, GraduationCap, GitCompare, Compass, Square, ArrowDown,
+  Download, Menu, GraduationCap, GitCompare, Compass, Square, ArrowDown, X,
+  Trophy, ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
 import Sidebar from './Sidebar';
@@ -16,7 +17,7 @@ const SOURCE_RE = /\[Source:\s*([^\]]+)\]/g;
 
 const GREETING = {
   role: 'model',
-  text: "Hello! I'm your **Admission Mantrana AI Counsellor**.\n\nI can help you find colleges using **TGEAPCET**, **AP EAPCET**, **JEE Main & Advanced**, **KCET**, and **MHT-CET** data. Just tell me your exam and rank, and I'll guide you through the rest! 🎓",
+  text: "Hello! I'm **counsa.ai**, your AI admission counsellor.\n\nI can help you find colleges using **TGEAPCET**, **AP EAPCET**, **JEE Main & Advanced**, **KCET**, and **MHT-CET** data. Just tell me your exam and rank, and I'll guide you through the rest! 🎓",
   sources: [],
   greeting: true,
 };
@@ -104,6 +105,168 @@ function examNeedsGender(exam) {
   return Boolean(exam) && exam !== 'KCET' && exam !== 'MHTCET';
 }
 
+// Guided question flow (Claude-style): instead of showing every input at once,
+// we ask one question at a time with clickable options. Each step maps to a
+// profile field; `optionsFor` derives choices from earlier answers, and
+// `showIf` skips a step when it doesn't apply (e.g. gender for KCET).
+const QUESTIONS = [
+  {
+    key: 'exam',
+    title: 'Which entrance exam are you taking?',
+    options: EXAM_CHOICES,
+  },
+  {
+    key: 'rank',
+    title: 'What rank did you score?',
+    type: 'number',
+    placeholder: 'e.g. 12000',
+  },
+  {
+    key: 'category',
+    title: 'Which category do you fall under?',
+    optionsFor: (p) => (CATEGORY_CHOICES[p?.exam] || []).map((c) => ({ value: c, label: c })),
+  },
+  {
+    key: 'gender',
+    title: 'Which counselling are you applying under?',
+    options: [
+      { value: 'boys', label: 'Boys' },
+      { value: 'girls', label: 'Girls' },
+    ],
+    showIf: (p) => examNeedsGender(p?.exam),
+  },
+  {
+    // Optional: never blocks completion (nextQuestion skips optional steps).
+    // Only surfaced when the bot asks to refine by branch.
+    key: 'branch_preference',
+    title: 'Any preferred branch?',
+    optional: true,
+    options: [
+      { value: 'Computer Science (CSE)', label: 'CSE' },
+      { value: 'Information Technology (IT)', label: 'IT' },
+      { value: 'Electronics & Communication (ECE)', label: 'ECE' },
+      { value: 'Electrical (EEE)', label: 'EEE' },
+      { value: 'Mechanical', label: 'Mechanical' },
+      { value: 'Civil', label: 'Civil' },
+      { value: 'AI & Machine Learning', label: 'AI / ML' },
+      { value: 'any', label: 'Any branch' },
+    ],
+  },
+];
+
+// The first applicable REQUIRED question whose field the student hasn't answered
+// or skipped — null when nothing's left. Optional steps (e.g. branch) are never
+// returned here; they only appear when the bot explicitly asks for them.
+function nextQuestion(profile, skipped) {
+  for (const q of QUESTIONS) {
+    if (q.optional) continue;
+    if (q.showIf && !q.showIf(profile)) continue;
+    if (skipped[q.key]) continue;
+    const val = profile?.[q.key];
+    if (val == null || val === '') return q;
+  }
+  return null;
+}
+
+// ── New-age tech college recommendations ──
+// Shown to strong / good rankers (not only the very top): for them we surface a
+// curated set of new-age tech colleges (NIAT, Scaler, Polaris, …). These admit
+// through their OWN application process — they're not part of the state/JoSAA
+// cutoff corpus — so this is a hand-picked UI section, not a retrieval result.
+// Thresholds are generous ("good student" band) and easy to tune per exam.
+const TOPPER_THRESHOLD = {
+  TGEAPCET: 15000,
+  APEAMCET: 15000,
+  KCET: 20000,
+  MHTCET: 20000,
+  JEE: 50000,
+  'JEE Advanced': 20000,
+};
+
+// `key` maps to the server-side allowlist in /api/college (which holds the
+// official URL it fetches and summarizes).
+const TOPPER_COLLEGES = [
+  {
+    key: 'niat',
+    name: 'NIAT',
+    full: 'NIAT (NxtWave Institute of Advanced Technologies)',
+    location: 'Hyderabad',
+    tag: 'Industry-built CS',
+    desc: 'Outcome-driven 4-year CS program with a hands-on, job-ready curriculum.',
+  },
+  {
+    key: 'scaler',
+    name: 'Scaler School of Technology',
+    full: 'Scaler School of Technology',
+    location: 'Bengaluru',
+    tag: 'New-age UG CS',
+    desc: '4-year UG degree in CS built with industry mentors and a project-first approach.',
+  },
+  {
+    key: 'polaris',
+    name: 'Polaris School of Technology',
+    full: 'Polaris School of Technology',
+    location: 'Bengaluru',
+    tag: 'AI-first B.Tech',
+    desc: 'B.Tech with an AI-first, practice-heavy curriculum and global exposure.',
+  },
+  {
+    key: 'newton',
+    name: 'Newton School of Technology',
+    full: 'Newton School of Technology (Rishihood University)',
+    location: 'Sonipat / Pune',
+    tag: 'Industry B.Tech',
+    desc: 'B.Tech in CS/AI co-designed with tech companies and focused on placements.',
+  },
+  {
+    key: 'plaksha',
+    name: 'Plaksha University',
+    full: 'Plaksha University',
+    location: 'Mohali',
+    tag: 'Deep-tech',
+    desc: 'Research-driven, interdisciplinary deep-tech undergraduate engineering.',
+  },
+];
+
+// True when the student is a strong / good ranker for their exam (the band that
+// gets the new-age tech college suggestions).
+function isTopperProfile(p) {
+  if (!p?.exam || p.rank == null || p.rank === '') return false;
+  const limit = TOPPER_THRESHOLD[p.exam];
+  const rank = Number(p.rank);
+  return limit != null && Number.isFinite(rank) && rank > 0 && rank <= limit;
+}
+
+// Heuristic: does a bot reply look like an actual college recommendation? The
+// counsellor returns eligible colleges as a markdown table, so a table row is
+// the strongest signal; we also accept clear "eligible / closing-rank" phrasing.
+// Kept specific so clarifying questions (which may mention "branch"/"college")
+// don't trigger the card. Used to place "top-ranker picks" after such a reply.
+function looksLikeRecommendation(text) {
+  if (!text) return false;
+  if (/^\s*\|.*\|/m.test(text)) return true; // markdown table row
+  return /\b(closing rank|cut-?off|eligible colleges|colleges you can get|you can get into)\b/i.test(text);
+}
+
+// Which detail is the bot asking about in this reply? Returns a QUESTIONS key
+// (or null). Used so the quick-reply popup appears even when the field is
+// already filled but the bot is asking to confirm/correct it (e.g. "confirm
+// your exact rank"). Order = priority when several are mentioned.
+function botAskedKey(text) {
+  if (!text || !/[?]/.test(text)) return null;
+  const t = text.toLowerCase();
+  // Branch first, but only with intent phrasing (so the table header
+  // "Program/Branch" never triggers it). Then the more specific fields, and
+  // bare "rank" last (a question can contain "rank" while asking for the exam).
+  if (/(which|prefer|preferred|refine|specific|interested in)[^?]*\bbranch\b/.test(t)
+    || /\bbranch\b[^?]*\bpreference\b/.test(t)) return 'branch_preference';
+  if (/\b(exam|entrance|counsell?ing)\b/.test(t)) return 'exam';
+  if (/\b(categor|caste|reservation)\b/.test(t)) return 'category';
+  if (/\bgender\b/.test(t) || /(boys?\s*(or|\/|,)\s*girls?|male\s*(or|\/)\s*female)/.test(t)) return 'gender';
+  if (/\b(rank|merit)\b/.test(t)) return 'rank';
+  return null;
+}
+
 // Pull plain text out of a react-markdown cell's children (for the mobile
 // card layout's labels/values). Cells are usually a string or an array.
 function cellText(node) {
@@ -185,16 +348,6 @@ function buildProfileContext(profile) {
   return sentence ? `Context: ${sentence}.` : '';
 }
 
-// A fully-specified "find colleges" message for the form's Show-colleges button,
-// so the bot has every detail in the message itself and won't re-ask.
-function buildFindMessage(p) {
-  const parts = [`Find eligible colleges for ${p.exam}`, `rank ${p.rank}`, `category ${p.category}`];
-  if (examNeedsGender(p.exam) && p.gender) parts.push(p.gender === 'girls' ? 'Girls' : 'Boys');
-  if (p.branch_preference) parts.push(p.branch_preference);
-  if (p.location_preference) parts.push(`in ${p.location_preference}`);
-  return parts.join(', ') + '.';
-}
-
 function userFromSession(sessionUser) {
   if (!sessionUser) return null;
   const meta = sessionUser.user_metadata || {};
@@ -203,6 +356,11 @@ function userFromSession(sessionUser) {
     name: meta.name || meta.full_name || null,
   };
 }
+
+// localStorage keys — the guided-flow answers live here so they survive reloads
+// and tab switches for everyone (guests included), independent of the server.
+const LS_PROFILE = 'counsellor:profile';
+const LS_SKIPPED = 'counsellor:skipped';
 
 export default function ChatPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -224,6 +382,21 @@ export default function ChatPage() {
   // Per-message UI state, keyed by message index (reset when messages reset).
   const [feedback, setFeedback] = useState({}); // index -> 'up' | 'down'
   const [copiedIndex, setCopiedIndex] = useState(null);
+
+  // Guided question state. `skipped` remembers questions the student chose to
+  // skip; `rankDraft` backs the rank input. `popupDismissedAt` records the
+  // message count when the user closed the question popup, so it stays hidden
+  // until the next message (when the bot may ask again).
+  const [skipped, setSkipped] = useState({});
+  const [rankDraft, setRankDraft] = useState('');
+  const [popupDismissedAt, setPopupDismissedAt] = useState(-1);
+
+  // True once we've restored saved answers from localStorage. The save effects
+  // wait for this so they never overwrite stored values with the initial blanks.
+  const [hydrated, setHydrated] = useState(false);
+
+  // Tracks the last-seen exam so we can re-open the guided flow when it changes.
+  const prevExamRef = useRef(undefined);
 
   // Transient corner notification (e.g. prompting guests to sign in).
   const [toast, setToast] = useState(null);
@@ -275,11 +448,74 @@ export default function ChatPage() {
   // ── Auth: track the signed-in user ──
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(userFromSession(data.user)));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(userFromSession(session?.user));
+      // Only an explicit sign-out clears saved answers — never the initial
+      // "auth still resolving" phase (which would wipe a guest's details).
+      if (event === 'SIGNED_OUT') {
+        setProfile(null);
+        setSkipped({});
+      }
     });
     return () => sub.subscription.unsubscribe();
   }, [supabase]);
+
+  // ── Restore saved answers from localStorage once, on mount ──
+  // setState lives in an async callback so the effect body never updates state
+  // synchronously (avoids the cascading-render lint, mirroring #18).
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      let storedProfile = null;
+      let storedSkipped = null;
+      try {
+        const rawProfile = localStorage.getItem(LS_PROFILE);
+        if (rawProfile) {
+          const p = JSON.parse(rawProfile);
+          if (p && typeof p === 'object') storedProfile = p;
+        }
+        const rawSkipped = localStorage.getItem(LS_SKIPPED);
+        if (rawSkipped) {
+          const s = JSON.parse(rawSkipped);
+          if (s && typeof s === 'object') storedSkipped = s;
+        }
+      } catch {
+        // Corrupt/blocked storage — start fresh.
+      }
+      if (!active) return;
+      if (storedProfile) setProfile(storedProfile);
+      if (storedSkipped) setSkipped(storedSkipped);
+      setHydrated(true);
+    })();
+    return () => { active = false; };
+  }, []);
+
+  // ── Persist answers to localStorage (after hydration, so we never clobber) ──
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      if (profile && Object.keys(profile).length > 0) {
+        localStorage.setItem(LS_PROFILE, JSON.stringify(profile));
+      } else {
+        localStorage.removeItem(LS_PROFILE);
+      }
+    } catch {
+      // Storage unavailable (private mode / quota) — non-fatal.
+    }
+  }, [profile, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      if (Object.keys(skipped).length > 0) {
+        localStorage.setItem(LS_SKIPPED, JSON.stringify(skipped));
+      } else {
+        localStorage.removeItem(LS_SKIPPED);
+      }
+    } catch {
+      // Non-fatal.
+    }
+  }, [skipped, hydrated]);
 
   // ── Load the conversation list whenever the user changes ──
   const loadConversations = useCallback(async () => {
@@ -311,26 +547,57 @@ export default function ChatPage() {
     return () => { active = false; };
   }, [user, loadConversations]);
 
-  // ── Load the saved profile (for behind-the-scenes context injection) ──
-  // The async IIFE keeps every setProfile call out of the synchronous effect
-  // body, so the load and the signed-out reset both run in a callback (#18).
+  // ── Seed from the server profile when signed in ──
+  // We never wipe here: guests keep their localStorage answers, and a logged-in
+  // user's freshly-entered (local) answers always win over the stored server
+  // copy — the server only fills in fields the student hasn't set this session.
+  // Sign-out clearing is handled in the auth listener above.
   useEffect(() => {
+    if (!user) return undefined;
     let active = true;
     (async () => {
-      if (!user) {
-        if (active) setProfile(null);
-        return;
-      }
       try {
         const res = await fetch('/api/profile');
         const data = await res.json();
-        if (active) setProfile(data.profile || null);
+        if (active && data.profile) {
+          setProfile((prev) => {
+            const merged = { ...data.profile };
+            if (prev) {
+              for (const [k, v] of Object.entries(prev)) {
+                if (v != null && v !== '') merged[k] = v;
+              }
+            }
+            return merged;
+          });
+        }
       } catch {
-        if (active) setProfile(null);
+        // Keep whatever we already have (localStorage / in-memory).
       }
     })();
     return () => { active = false; };
   }, [user]);
+
+  // ── Clear stale answers when the exam changes mid-session ──
+  // If the student switches to a different exam (typed in chat, or resolved by
+  // the bot) we clear the now-stale category/gender so the in-chat quick-reply
+  // re-asks them for the new exam.
+  useEffect(() => {
+    const exam = profile?.exam ?? null;
+    const prev = prevExamRef.current;
+    prevExamRef.current = exam;
+    if (prev === undefined || !exam || exam === prev) return undefined;
+    let active = true;
+    (async () => {
+      if (!active) return;
+      setSkipped((s) => {
+        const next = { ...s };
+        delete next.category;
+        delete next.gender;
+        return next;
+      });
+    })();
+    return () => { active = false; };
+  }, [profile]);
 
   // ── Persist a message to the active conversation (logged-in only) ──
   const persistMessage = useCallback(async (convId, role, content, sources = []) => {
@@ -374,6 +641,8 @@ export default function ChatPage() {
     setFeedback({});
     setCopiedIndex(null);
     setInput('');
+    setSkipped({});
+    setRankDraft('');
     inputRef.current?.focus();
   }, [isLoading, isStreaming]);
 
@@ -424,6 +693,29 @@ export default function ChatPage() {
       }
       return next;
     });
+  }, []);
+
+  // Answer the current guided question and advance to the next one. Choosing an
+  // exam un-skips category/gender so they get asked afresh for the new exam.
+  const answerQuestion = useCallback((key, value) => {
+    updateProfileField(key, value);
+    if (key === 'exam') {
+      setSkipped((prev) => {
+        const next = { ...prev };
+        delete next.category;
+        delete next.gender;
+        return next;
+      });
+    }
+    if (key === 'rank') setRankDraft('');
+  }, [updateProfileField]);
+
+  // Show a brief corner notification that auto-dismisses. Declared before
+  // sendMessage (which calls it) so the binding is in scope at definition time.
+  const showToast = useCallback((message) => {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
   }, []);
 
   const sendMessage = async (text) => {
@@ -584,7 +876,92 @@ export default function ChatPage() {
     abortRef.current?.abort();
   }, []);
 
+  // Answer an in-chat quick-reply question: record it locally (so it rides along
+  // as priorParams) and send it as a chat message so the bot picks up where it
+  // left off — asking the next missing detail or showing colleges.
+  const answerInChat = (question, value) => {
+    if (isLoading || isStreaming) return;
+    // "Any branch" clears the preference rather than storing the literal "any".
+    if (question.key === 'branch_preference' && value === 'any') {
+      updateProfileField('branch_preference', null);
+      sendMessage('Any branch is fine — show all branches.');
+      return;
+    }
+    answerQuestion(question.key, value);
+    let text;
+    if (question.key === 'exam') {
+      const label = EXAM_CHOICES.find((o) => o.value === value)?.label ?? value;
+      text = `My entrance exam is ${label}.`;
+    } else if (question.key === 'rank') {
+      text = `My rank is ${value}.`;
+    } else if (question.key === 'gender') {
+      text = value === 'girls' ? 'I am applying under Girls.' : 'I am applying under Boys.';
+    } else if (question.key === 'category') {
+      text = `My category is ${value}.`;
+    } else if (question.key === 'branch_preference') {
+      const label = question.options?.find((o) => o.value === value)?.label ?? value;
+      text = `I prefer ${label}.`;
+    } else {
+      text = String(value);
+    }
+    sendMessage(text);
+  };
+
+  // Clicking a top-ranker pick fetches that college's official site server-side
+  // and shows a concise, model-written summary as a normal bot reply.
+  const askCollege = useCallback(async (college) => {
+    if (isLoading || isStreaming) return;
+    const text = `Tell me about ${college.name}`;
+    setMessages((prev) => [...prev, { role: 'user', text, sources: [] }]);
+    setIsLoading(true);
+
+    const convId = await ensureConversation();
+    if (convId) persistMessage(convId, 'user', text, []);
+
+    try {
+      const res = await fetch('/api/college', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ college: college.key }),
+      });
+      let data = null;
+      try { data = await res.json(); } catch { /* non-JSON */ }
+      setIsLoading(false);
+
+      if (!res.ok || !data?.summary) {
+        const msg = data?.error?.message || 'Sorry — I couldn’t fetch details for this college right now. Please try again.';
+        setMessages((prev) => [...prev, { role: 'model', text: msg, sources: [] }]);
+        return;
+      }
+
+      setMessages((prev) => [...prev, { role: 'model', text: data.summary, sources: [] }]);
+      if (convId) {
+        await persistMessage(convId, 'model', data.summary, []);
+        loadConversations();
+      }
+    } catch {
+      setIsLoading(false);
+      setMessages((prev) => [
+        ...prev,
+        { role: 'model', text: 'Network error fetching college details. Please check your connection and try again.', sources: [] },
+      ]);
+    }
+  }, [isLoading, isStreaming, ensureConversation, persistMessage, loadConversations]);
+
   const hasUserMessages = messages.some(m => m.role === 'user');
+
+  // Index of the latest bot reply that reads like a college recommendation —
+  // we drop the "top-ranker picks" card right after it (only for toppers).
+  const recommendationIndex = useMemo(() => {
+    if (!isTopperProfile(profile)) return -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === 'model' && !m.greeting && !m.streaming && looksLikeRecommendation(m.text)) {
+        return i;
+      }
+    }
+    return -1;
+  }, [messages, profile]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -620,13 +997,6 @@ export default function ChatPage() {
       const len = prompt.length;
       requestAnimationFrame(() => el.setSelectionRange(len, len));
     }
-  }, []);
-
-  // Show a brief corner notification that auto-dismisses.
-  const showToast = useCallback((message) => {
-    setToast(message);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 4000);
   }, []);
 
   // ── Copy a bot reply to the clipboard (signed-in only) ──
@@ -701,7 +1071,7 @@ export default function ChatPage() {
     }).join('\n\n---\n\n');
 
     const content =
-      `# Admission Mantrana — Counselling Session\n\n` +
+      `# counsa.ai — Counselling Session\n\n` +
       `_Exported ${new Date().toLocaleString()}_\n\n---\n\n` +
       body + '\n';
 
@@ -755,87 +1125,145 @@ export default function ChatPage() {
     </form>
   );
 
-  // Quick-details form above the composer — pick exam / rank / category / gender
-  // once and the bot uses them (sent as priorParams) without asking in chat.
-  const formExam = profile?.exam || '';
-  const categoryOptions = CATEGORY_CHOICES[formExam] || [];
-  const showGender = examNeedsGender(formExam);
-  const formComplete =
-    !!formExam && profile?.rank != null && profile?.rank !== '' && !!profile?.category &&
-    (showGender ? !!profile?.gender : true);
+  // Text of the latest finished bot reply — used to tell whether (and what) it's
+  // asking, so we don't pop the card up after greetings or college lists.
+  const lastBotText = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === 'model' && !m.streaming) return m.text || '';
+    }
+    return '';
+  }, [messages]);
 
-  const detailsForm = (
-    <div className={styles.detailsForm} aria-label="Your details">
-      <label className={styles.detailField}>
-        <span className={styles.detailLabel}>Exam</span>
-        <select
-          className={styles.detailSelect}
-          value={formExam}
-          onChange={(e) => updateProfileField('exam', e.target.value)}
-          disabled={busy}
-        >
-          <option value="">Select…</option>
-          {EXAM_CHOICES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      </label>
+  // Which question to surface as the input-bar popover:
+  //   1) the specific detail the bot is asking about (even if already filled —
+  //      e.g. "confirm your exact rank"), else
+  //   2) the first still-missing detail, when the reply otherwise reads as a
+  //      request for details.
+  // When the bot is PRESENTING RESULTS (a college list/table), it's not asking
+  // for a detail — even though that reply contains words like "Rank" or "Boys"
+  // (table headers). The one exception: after results it often invites refining
+  // by branch ("…by a specific location or branch preference?"), and a branch
+  // quick-reply there IS helpful.
+  const botPresentingResults = looksLikeRecommendation(lastBotText);
+  const askedKey = /[?]/.test(lastBotText) ? botAskedKey(lastBotText) : null;
+  const askedQuestion = askedKey
+    ? QUESTIONS.find((q) => q.key === askedKey && (!q.showIf || q.showIf(profile)))
+    : null;
 
-      <label className={styles.detailField}>
-        <span className={styles.detailLabel}>Rank</span>
-        <input
-          type="number"
-          min="1"
-          inputMode="numeric"
-          placeholder="e.g. 12000"
-          className={styles.detailInput}
-          value={profile?.rank ?? ''}
-          onChange={(e) => updateProfileField('rank', e.target.value === '' ? null : parseInt(e.target.value, 10))}
-          disabled={busy}
-        />
-      </label>
+  let popupQuestion = null;
+  if (botPresentingResults) {
+    // Only a branch-refine quick-reply is allowed on top of a results table.
+    if (askedKey === 'branch_preference') popupQuestion = askedQuestion;
+  } else if (/[?]/.test(lastBotText)) {
+    // Prefer the first still-MISSING detail (handles "which exam is this rank
+    // from?" — exam is missing though the sentence says "rank"); else the
+    // explicitly-asked field (confirmation / branch).
+    popupQuestion = nextQuestion(profile, skipped) || askedQuestion;
+  }
+  const popupOptions = popupQuestion
+    ? (popupQuestion.optionsFor ? popupQuestion.optionsFor(profile) : popupQuestion.options || [])
+    : [];
 
-      <label className={styles.detailField}>
-        <span className={styles.detailLabel}>Category</span>
-        <select
-          className={styles.detailSelect}
-          value={profile?.category || ''}
-          onChange={(e) => updateProfileField('category', e.target.value)}
-          disabled={busy || !formExam}
-        >
-          <option value="">{formExam ? 'Select…' : 'Pick exam'}</option>
-          {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </label>
-
-      {showGender && (
-        <div className={styles.detailField}>
-          <span className={styles.detailLabel}>Gender</span>
-          <div className={styles.genderToggle}>
-            <button
-              type="button"
-              className={`${styles.genderOpt} ${profile?.gender === 'boys' ? styles.genderActive : ''}`}
-              onClick={() => updateProfileField('gender', 'boys')}
-              disabled={busy}
-            >Boys</button>
-            <button
-              type="button"
-              className={`${styles.genderOpt} ${profile?.gender === 'girls' ? styles.genderActive : ''}`}
-              onClick={() => updateProfileField('gender', 'girls')}
-              disabled={busy}
-            >Girls</button>
-          </div>
+  // Quick-reply popover rises from the input bar (so it catches the eye) when
+  // the bot is asking and the user hasn't dismissed it for the current turn.
+  const showQuestionPopup = hasUserMessages && !busy && popupQuestion
+    && messages.length !== popupDismissedAt;
+  const chatQuestionPopup = showQuestionPopup && (
+    <div className={styles.qPopup}>
+      <div className={`${styles.qCard} ${styles.qPopupCard}`} role="group" aria-label={popupQuestion.title}>
+        <div className={styles.qHead}>
+          <span className={styles.qTitle}>{popupQuestion.title}</span>
+          <button
+            type="button"
+            className={styles.qClose}
+            onClick={() => setPopupDismissedAt(messages.length)}
+            aria-label="Dismiss"
+          >
+            <X size={16} />
+          </button>
         </div>
-      )}
 
-      {formComplete && (
-        <button
-          type="button"
-          className={styles.detailGo}
-          onClick={() => sendMessage(buildFindMessage(profile))}
-          disabled={busy}
-        >
-          Show colleges
-        </button>
-      )}
+        {popupQuestion.type === 'number' ? (
+          <form
+            className={styles.qNumberRow}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const n = parseInt(rankDraft, 10);
+              if (Number.isFinite(n) && n > 0) answerInChat(popupQuestion, n);
+            }}
+          >
+            <input
+              type="number"
+              min="1"
+              inputMode="numeric"
+              placeholder={popupQuestion.placeholder}
+              className={styles.qNumberInput}
+              value={rankDraft}
+              onChange={(e) => setRankDraft(e.target.value)}
+              autoFocus
+            />
+            <button type="submit" className={styles.qContinue} disabled={!rankDraft.trim()}>
+              Continue
+            </button>
+          </form>
+        ) : (
+          <div className={styles.qOptions}>
+            {popupOptions.map((o, i) => (
+              <button
+                key={o.value}
+                type="button"
+                className={styles.qOption}
+                onClick={() => answerInChat(popupQuestion, o.value)}
+              >
+                <span className={styles.qNum}>{i + 1}</span>
+                <span className={styles.qOptLabel}>{o.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // Curated "top-ranker picks" — rendered inline in the chat, right after the
+  // bot's college recommendation (see recommendationIndex below). Same
+  // Claude-style card as the guided questions; each row asks the counsellor
+  // about that college (in-app).
+  const topperPicksCard = (
+    <div className={styles.topperInChat}>
+      <div className={styles.qCard} role="group" aria-label="Recommended colleges for top rankers">
+        <div className={styles.qHead}>
+          <span className={styles.qTitle}>
+            <Trophy size={15} className={styles.qTitleIcon} />
+            Recommended new-age tech colleges
+          </span>
+        </div>
+        <div className={styles.qOptions}>
+          {TOPPER_COLLEGES.map((c, i) => (
+            <button
+              key={c.name}
+              type="button"
+              className={styles.qOption}
+              onClick={() => askCollege(c)}
+              disabled={busy}
+            >
+              <span className={styles.qNum}>{i + 1}</span>
+              <span className={styles.topperOptBody}>
+                <span className={styles.topperOptName}>
+                  {c.name}
+                  <span className={styles.topperOptTag}>{c.tag}</span>
+                </span>
+                <span className={styles.topperOptMeta}>{c.location} · {c.desc}</span>
+              </span>
+              <ArrowRight size={15} className={styles.topperOptArrow} />
+            </button>
+          ))}
+        </div>
+        <p className={styles.topperNote}>
+          These admit through their own application process — not state/JoSAA counselling.
+        </p>
+      </div>
     </div>
   );
 
@@ -847,7 +1275,7 @@ export default function ChatPage() {
         ? 'No messages left this hour — it resets shortly.'
         : `${rateRemaining} message${rateRemaining === 1 ? '' : 's'} left this hour`}
       {!user && ' · '}
-      {!user && <Link href="/login" className={styles.rateHintLink}>Sign in for more</Link>}
+      {!user && <Link href="/login" prefetch={false} className={styles.rateHintLink}>Sign in for more</Link>}
     </p>
   );
 
@@ -916,8 +1344,8 @@ export default function ChatPage() {
             {messages.map((msg, index) => {
               const isUser = msg.role === 'user';
               return (
+                <Fragment key={index}>
                 <div
-                  key={index}
                   className={`${styles.messageWrapper} ${isUser ? styles.messageUser : styles.messageBot}`}
                 >
                   <div className={styles.avatar}>
@@ -982,6 +1410,9 @@ export default function ChatPage() {
                     )}
                   </div>
                 </div>
+                {/* Top-ranker picks, dropped right after the recommendation. */}
+                {index === recommendationIndex && topperPicksCard}
+                </Fragment>
               );
             })}
 
@@ -1016,7 +1447,8 @@ export default function ChatPage() {
               <ArrowDown size={18} />
             </button>
           )}
-          {detailsForm}
+          {/* Quick-reply question popover, rising from the input bar. */}
+          {chatQuestionPopup}
           {composer}
           {rateHint}
           <p className={styles.disclaimer}>
@@ -1037,7 +1469,6 @@ export default function ChatPage() {
             </p>
 
             <div className={styles.heroComposer}>
-              {detailsForm}
               {composer}
               {rateHint}
             </div>
@@ -1071,7 +1502,7 @@ export default function ChatPage() {
         {toast && (
           <div className={styles.toast} role="status">
             <span>{toast}</span>
-            <Link href="/login" className={styles.toastLink}>Sign in</Link>
+            <Link href="/login" prefetch={false} className={styles.toastLink}>Sign in</Link>
           </div>
         )}
       </div>

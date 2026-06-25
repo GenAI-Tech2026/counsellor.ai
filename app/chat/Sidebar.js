@@ -187,7 +187,7 @@ export default function Sidebar({
           <span className={styles.brandMark} aria-hidden="true">
             <MessageSquare size={16} />
           </span>
-          <span className={styles.brandName}>Admission Mantrana</span>
+          <span className={styles.brandName}>counsa.ai</span>
         </div>
         <button
           type="button"
@@ -305,7 +305,7 @@ export default function Sidebar({
           ) : !user ? (
             <div className={styles.prompt}>
               <p className={styles.promptText}>Sign in to save and revisit your chats</p>
-              <Link href="/login" className={styles.signInButton}>
+              <Link href="/login" prefetch={false} className={styles.signInButton}>
                 Sign in
               </Link>
             </div>
@@ -377,7 +377,7 @@ export default function Sidebar({
             </span>
             <span className={styles.userName}>{user.name || user.email}</span>
           </div>
-          <Link href="/profile" className={styles.profileLink}>
+          <Link href="/profile" prefetch={false} className={styles.profileLink}>
             <UserCog size={16} />
             <span>My details</span>
           </Link>

@@ -281,6 +281,13 @@ export async function POST(req) {
   const genderMatters = exam !== 'KCET' && exam !== 'MHTCET';
   const hasAllRequired = hasRank && !!category && (genderMatters ? !!gender : true);
 
+  // Eligibility filters keep only colleges whose closing rank ≥ this bound. We
+  // widen it ~15% below the student's true rank so the corpus also includes
+  // options the student is *just* short of — these become the "Borderline"
+  // section. The model still classifies against the TRUE rank (sent in the
+  // message), so Safe vs Borderline stays accurate.
+  const retrievalMinRank = hasRank ? Math.max(1, Math.floor(rank * 0.85)) : null;
+
   // Header value shared by every successful response (streaming + cache hit).
   const paramsHeader = encodeURIComponent(JSON.stringify(resolved));
   const successHeaders = (extra = {}) => {
@@ -331,7 +338,7 @@ export async function POST(req) {
         const seatType = JEE_SEAT_TYPE[String(category).toUpperCase()] || null;
         const genderVal = JEE_GENDER[gender] ?? null;
         const parts = [label, category, gender, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
-        ({ contextBlock } = await retrieve(parts.join(' '), 12, { rank, seatType, gender: genderVal }));
+        ({ contextBlock } = await retrieve(parts.join(' '), 24, { rank: retrievalMinRank, seatType, gender: genderVal }));
       } else if (!hasRank) {
         ({ contextBlock } = await retrieve(message, 6));
       }
@@ -339,9 +346,9 @@ export async function POST(req) {
       contextLabel = 'APEAMCET (AP EAPCET) official last-rank data — eligible colleges only';
       if (hasAllRequired) {
         const fieldName = APEAMCET_CATEGORY_FIELD[category]?.[gender];
-        const whereFilter = fieldName ? { [fieldName]: { '$gte': rank } } : null;
+        const whereFilter = fieldName ? { [fieldName]: { '$gte': retrievalMinRank } } : null;
         const parts = ['APEAMCET 2022', category, gender, `rank ${rank}`, 'eligible colleges last rank', ...prefParts];
-        ({ contextBlock } = await retrieveApeamcetContext(parts.join(' '), 12, whereFilter));
+        ({ contextBlock } = await retrieveApeamcetContext(parts.join(' '), 24, whereFilter));
       } else if (!hasRank) {
         ({ contextBlock } = await retrieveApeamcetContext(message, 6));
       }
@@ -350,7 +357,7 @@ export async function POST(req) {
       if (hasAllRequired) {
         const code = KCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['KCET 2024 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
-        ({ contextBlock } = await retrieveKcetContext(parts.join(' '), 12, { rankField: code, rank }));
+        ({ contextBlock } = await retrieveKcetContext(parts.join(' '), 24, { rankField: code, rank: retrievalMinRank }));
       } else if (!hasRank) {
         ({ contextBlock } = await retrieveKcetContext(message, 6));
       }
@@ -359,7 +366,7 @@ export async function POST(req) {
       if (hasAllRequired) {
         const code = MHTCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['MHT-CET 2024 Engineering', category, `CET merit number ${rank}`, 'eligible colleges closing rank', ...prefParts];
-        ({ contextBlock } = await retrieveMhtcetContext(parts.join(' '), 12, { rankField: code, rank }));
+        ({ contextBlock } = await retrieveMhtcetContext(parts.join(' '), 24, { rankField: code, rank: retrievalMinRank }));
       } else if (!hasRank) {
         ({ contextBlock } = await retrieveMhtcetContext(message, 6));
       }
@@ -367,9 +374,9 @@ export async function POST(req) {
       // Default: TGEAPCET (Telangana) — also covers exam === null / 'TGEAPCET'.
       if (hasAllRequired) {
         const fieldName = CATEGORY_FIELD[category]?.[gender];
-        const whereFilter = fieldName ? { [fieldName]: { '$gte': rank } } : null;
+        const whereFilter = fieldName ? { [fieldName]: { '$gte': retrievalMinRank } } : null;
         const parts = ['TGEAPCET 2025', category, gender, `rank ${rank}`, 'eligible colleges last rank cutoff', ...prefParts];
-        ({ contextBlock } = await retrieveContext(parts.join(' '), 12, whereFilter));
+        ({ contextBlock } = await retrieveContext(parts.join(' '), 24, whereFilter));
       } else if (!hasRank) {
         ({ contextBlock } = await retrieveContext(message, 6));
       }
@@ -380,10 +387,24 @@ export async function POST(req) {
   }
   mark('retrieve');
 
-  // 6. Build augmented message
-  const augmentedMessage = contextBlock
-    ? `RETRIEVED CONTEXT (${contextLabel}):\n${contextBlock}\n\nUSER MESSAGE:\n${message}`
-    : message;
+  // 6. Build augmented message.
+  // Always restate the resolved profile so the model knows the student's
+  // rank/category/gender even if the client didn't append it — without this it
+  // may re-ask for details it already has.
+  const profileBits = [];
+  if (exam) profileBits.push(`exam ${exam}`);
+  if (rank != null) profileBits.push(`rank ${rank}`);
+  if (category) profileBits.push(`category ${category}`);
+  if (genderMatters && gender) profileBits.push(`gender ${gender === 'girls' ? 'Girls' : 'Boys'}`);
+  if (branch_preference) profileBits.push(`branch preference ${branch_preference}`);
+  if (location_preference) profileBits.push(`location preference ${location_preference}`);
+  const profileLine = profileBits.length ? `STUDENT PROFILE (already provided — do not re-ask): ${profileBits.join(', ')}.` : '';
+
+  const augmentedMessage = [
+    contextBlock ? `RETRIEVED CONTEXT (${contextLabel}):\n${contextBlock}` : '',
+    profileLine,
+    `USER MESSAGE:\n${message}`,
+  ].filter(Boolean).join('\n\n');
 
   // 7. Build clean chat history (windowed — same recent turns we extracted from)
   const chatHistory = recentHistory.map(turn => ({
@@ -391,19 +412,69 @@ export async function POST(req) {
     parts: [{ text: turn.parts.map(p => p.text || '').join('') }],
   }));
 
-  // 8. Stream Gemini response
+  // 8. Generate the answer.
+  // QA pass (#qa): when we have retrieved context to check against, we first
+  // get a DRAFT, then run a verification model that re-grounds it — every
+  // college/number must come from the context, Safe/Borderline must be
+  // classified strictly by closing-rank vs the student's rank, no data
+  // year/source-year may leak, and it must stay on-topic. The *verified* answer
+  // is what we stream. Disable with CHAT_QA_VERIFY=0. With no context (the bot
+  // is just asking a question), we skip QA and stream directly for speed.
+  const qaEnabled = process.env.CHAT_QA_VERIFY !== '0' && !!contextBlock && hasAllRequired;
   try {
     const model = genAI.getGenerativeModel({
       model: 'gemini-3.1-flash-lite',
       systemInstruction: SYSTEM_PROMPT,
     });
-
     const chat = model.startChat({
       history: chatHistory,
       generationConfig: { maxOutputTokens: 2048 },
     });
 
-    const geminiStream = await chat.sendMessageStream(augmentedMessage);
+    // Producer for the token stream we send to the client. In QA mode it yields
+    // the verifier's corrected output; otherwise the model's direct stream.
+    let tokenStream;
+    if (qaEnabled) {
+      const draftResult = await chat.sendMessage(augmentedMessage);
+      const draft = draftResult.response.text();
+      mark('draft');
+
+      const verifyPrompt = `You are a strict QA reviewer for an AI admission counsellor's reply. Re-ground and CORRECT the draft using ONLY the data below.
+
+RETRIEVED CONTEXT (the ONLY source of truth — ${contextLabel}):
+"""
+${contextBlock}
+"""
+${profileLine ? `\n${profileLine}\n` : ''}
+STUDENT MESSAGE:
+"""
+${message}
+"""
+
+DRAFT ANSWER TO REVIEW:
+"""
+${draft}
+"""
+
+Fix the draft so that ALL of these hold, then output the corrected answer:
+1. Every college, branch, and closing/last-rank number appears in the RETRIEVED CONTEXT. Remove anything invented; never alter a number.
+2. Safe vs Borderline is classified PURELY by the closing rank vs the student's rank (a *lower* rank number is better): Safe = closing rank at least ~20% LARGER than the student's rank; Borderline = closing rank from ~15% smaller up to ~20% larger. Branch popularity is irrelevant. Move misclassified rows to the correct section. If no option is in the borderline band, show only Safe and state "No borderline colleges in the available data for this profile." — do NOT move safe colleges into borderline.
+3. Never mention the year/session/cycle of the data anywhere.
+4. Stay strictly on admissions for the provided data; keep the two labelled tables (🟢 Safe, 🟡 Borderline) and the opening one-line count accurate to what you actually list.
+5. Keep the warm, concise tone. Do NOT add reviewer commentary or notes about these checks.
+
+Output ONLY the final corrected answer in markdown (no preamble). If the draft already satisfies everything, output it unchanged.`;
+
+      const verifyModel = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
+      const verifyStream = await verifyModel.generateContentStream({
+        contents: [{ role: 'user', parts: [{ text: verifyPrompt }] }],
+        generationConfig: { maxOutputTokens: 2048, temperature: 0 },
+      });
+      tokenStream = verifyStream.stream;
+    } else {
+      const geminiStream = await chat.sendMessageStream(augmentedMessage);
+      tokenStream = geminiStream.stream;
+    }
     if (timing) console.log('[chat] miss', JSON.stringify(marks));
 
     const stream = new ReadableStream({
@@ -412,7 +483,7 @@ export async function POST(req) {
         let fullText = '';
         let first = true;
         try {
-          for await (const chunk of geminiStream.stream) {
+          for await (const chunk of tokenStream) {
             const text = chunk.text();
             if (text) {
               if (first) { first = false; mark('first_token'); if (timing) console.log('[chat] first_token', marks.first_token + 'ms'); }

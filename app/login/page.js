@@ -32,7 +32,7 @@ export default function LoginPage() {
   return (
     <main className={styles.main}>
       <div className={`${styles.card} glass`}>
-        <h1 className={styles.title}>Admission Mantrana</h1>
+        <h1 className={styles.title}>counsa.ai</h1>
         <p className={styles.subtitle}>
           Sign in to save your chats and pick up where you left off
         </p>
@@ -70,7 +70,7 @@ export default function LoginPage() {
           <p className={styles.error}>Sign-in failed. Please try again.</p>
         )}
 
-        <Link href="/chat" className={styles.skipLink}>
+        <Link href="/chat" prefetch={false} className={styles.skipLink}>
           Continue without signing in
         </Link>
       </div>

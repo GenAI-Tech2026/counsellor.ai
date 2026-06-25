@@ -128,7 +128,7 @@
 
 .messagesList {
   width: 100%;
-  max-width: 760px;
+  max-width: 880px;
   display: flex;
   flex-direction: column;
   gap: 2rem;
@@ -195,10 +195,13 @@
 .bubbleUser p { margin: 0; }
 
 .bubbleBot {
-  /* No bubble background for bot — plain ink on canvas */
+  /* No bubble background for bot — plain ink on canvas. Use the full column so
+     wide result tables get all the room available (rather than the 85% cap). */
   background: transparent;
   padding: 0;
   color: var(--ink);
+  max-width: 100%;
+  width: 100%;
 }
 
 .thinkingBubble {
@@ -294,11 +297,11 @@
    Wrap at word boundaries (not mid-word) — the bubble sets overflow-wrap:anywhere
    for long URLs, but inside a table that just shreds words like "ENGINEERING". */
 .markdownContent th, .markdownContent td {
-  min-width: 7rem;
+  min-width: 6rem;
   overflow-wrap: normal;
   word-break: normal;
 }
-.markdownContent th:first-child, .markdownContent td:first-child { min-width: 8.5rem; }
+.markdownContent th:first-child, .markdownContent td:first-child { min-width: 9.5rem; }
 
 .markdownContent code {
   background: var(--surface-2);
@@ -504,7 +507,7 @@
 /* Quick-details form (exam / rank / category / gender) above the composer. */
 .detailsForm {
   width: 100%;
-  max-width: 760px;
+  max-width: 880px;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
@@ -593,9 +596,318 @@
 .detailGo:active { transform: scale(0.97); }
 .detailGo:disabled { opacity: 0.6; cursor: not-allowed; }
 
+/* ── Guided question flow (Claude-style): one question at a time ── */
+.flowWrap {
+  width: 100%;
+  max-width: 880px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 0.4rem;
+}
+.flowBar {
+  width: 100%;
+  max-width: 880px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+}
+
+/* Flow complete: chips on the left, Show-colleges button pushed to the right. */
+.flowReady {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.6rem;
+}
+.flowReady .detailGo {
+  margin-left: auto;
+  align-self: center;
+}
+
+/* Answered-so-far chips (removable) */
+.flowChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.flowChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-press);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  padding: 0.28rem 0.6rem;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+.flowChip:hover:not(:disabled) { background: var(--accent-line); }
+.flowChip svg { opacity: 0.7; }
+.flowChip:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.flowReopen {
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.42rem 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.flowReopen:hover:not(:disabled) { color: var(--ink); border-color: var(--accent-line); }
+.flowReopen:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* The question card */
+.qCard {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+}
+.qHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.8rem 0.95rem 0.55rem;
+}
+.qTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.3;
+}
+.qClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--ink-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 0.2rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.qClose:hover { color: var(--ink); background: var(--surface-2); }
+
+.qOptions {
+  display: flex;
+  flex-direction: column;
+}
+.qOption {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--line);
+  padding: 0.7rem 0.95rem;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.qOption:hover:not(:disabled) { background: var(--accent-soft); }
+.qOption:disabled { opacity: 0.6; cursor: not-allowed; }
+.qNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+  background: var(--surface-2);
+  border-radius: 6px;
+}
+.qOption:hover:not(:disabled) .qNum { color: var(--accent-press); }
+.qOptLabel { flex: 1; }
+
+/* Free-text (rank) step */
+.qNumberRow {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.2rem 0.95rem 0.6rem;
+}
+.qNumberInput {
+  flex: 1;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.5rem 0.65rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.qNumberInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.qContinue {
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent-on);
+  background: var(--accent);
+  border: none;
+  border-radius: var(--r-sm);
+  padding: 0.5rem 0.95rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.qContinue:hover:not(:disabled) { background: var(--accent-hover); }
+.qContinue:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.qSkip {
+  align-self: flex-start;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--line);
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.95rem;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.12s ease;
+}
+.qSkip:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+.qSkip:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ── Question popover: rises from the input bar to catch the eye ── */
+.qPopup {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0 1.5rem;
+  margin-bottom: 0.7rem;
+  z-index: 20;
+  pointer-events: none;   /* only the card itself is interactive */
+}
+.qPopupCard {
+  position: relative;
+  width: 100%;
+  max-width: 880px;
+  pointer-events: auto;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.22);
+  transform-origin: bottom center;
+  animation: qPopIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* Little tail pointing down at the input bar. */
+.qPopupCard::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 2rem;
+  width: 14px;
+  height: 14px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: translateY(-50%) rotate(45deg);
+}
+@keyframes qPopIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Top-ranker picks: new-age tech colleges, in the Claude-style card ── */
+/* Reuses .qCard / .qHead / .qTitle / .qOptions / .qNum from the question flow. */
+/* Rendered inline in the chat, just after the bot's recommendation. */
+.topperInChat {
+  width: 100%;
+  max-width: 880px;
+  margin: 0.25rem 0 0.5rem;
+  align-self: flex-start;
+}
+.qTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.qTitleIcon { color: var(--accent); flex-shrink: 0; }
+
+/* Align the number badge to the top for the two-line college rows. */
+.topperOptBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.topperOptName {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.2;
+}
+.topperOptTag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent-press);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+}
+.topperOptMeta {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  line-height: 1.35;
+}
+.topperOptArrow {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--ink-muted);
+  transition: color 0.15s ease, transform 0.12s ease;
+}
+.qOption:hover:not(:disabled) .topperOptArrow {
+  color: var(--accent);
+  transform: translateX(2px);
+}
+.topperNote {
+  font-size: 0.68rem;
+  color: var(--ink-muted);
+  margin: 0;
+  padding: 0.55rem 0.95rem 0.7rem;
+  border-top: 1px solid var(--line);
+}
+
 .profileChips {
   width: 100%;
-  max-width: 760px;
+  max-width: 880px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -642,7 +954,7 @@
 /* ── Rate-limit hint (#14): subtle "N messages left this hour" note ── */
 .rateHint {
   width: 100%;
-  max-width: 760px;
+  max-width: 880px;
   text-align: center;
   font-size: 0.74rem;
   color: var(--ink-muted);
@@ -685,7 +997,7 @@
 /* ── Composer: an auto-growing input with an inline send button ── */
 .composer {
   width: 100%;
-  max-width: 760px;
+  max-width: 880px;
   display: flex;
   flex-direction: row;
   align-items: flex-end;
@@ -775,7 +1087,7 @@
 }
 .heroInner {
   width: 100%;
-  max-width: 760px;
+  max-width: 880px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -943,6 +1255,16 @@
   /* 16px keeps iOS Safari from auto-zooming the field when it's tapped. */
   .composerInput { font-size: 16px; }
   .composer { border-radius: var(--r-lg); padding: 0.4rem 0.4rem 0.4rem 0.85rem; }
+
+  /* Guided question card: tighter padding + larger tap targets on phones. */
+  .qTitle { font-size: 0.9rem; }
+  .qHead { padding: 0.7rem 0.8rem 0.5rem; }
+  .qOption { font-size: 16px; padding: 0.72rem 0.8rem; }
+  .qNumberRow { padding: 0.2rem 0.8rem 0.6rem; }
+  .qNumberInput { font-size: 16px; }
+  .qPopup { padding: 0 0.75rem; }
+  .topperOptName { font-size: 0.92rem; }
+  .topperOptMeta { font-size: 0.8rem; }
 
   /* Phones: result tables are cramped (#11). Hide the real <table> and show the
      stacked, labeled cards the custom renderer emits — each row becomes a card

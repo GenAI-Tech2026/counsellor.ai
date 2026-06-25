@@ -113,7 +113,7 @@ export default function ProfilePage() {
   return (
     <main className={styles.main}>
       {/* Always-visible back control (#nav) — prominent, top-left, easy to hit. */}
-      <Link href="/chat" className={styles.backBtn}>
+      <Link href="/chat" prefetch={false} className={styles.backBtn}>
         <ArrowLeft size={17} />
         <span>Back to chat</span>
       </Link>
@@ -138,7 +138,7 @@ export default function ProfilePage() {
         ) : user === null ? (
           <div className={styles.prompt}>
             <p>Sign in to save your details.</p>
-            <Link href="/login" className={styles.signIn}>Sign in</Link>
+            <Link href="/login" prefetch={false} className={styles.signIn}>Sign in</Link>
           </div>
         ) : (
           <form className={styles.form} onSubmit={handleSubmit}>
