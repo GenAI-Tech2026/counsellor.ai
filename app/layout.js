@@ -1,20 +1,32 @@
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans, Fraunces } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+// Body / UI: a warm, modern humanist sans — friendlier than Inter while staying
+// crisp and professional, which suits a calm counselling product.
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
   subsets: ["latin"],
+  display: "swap",
+});
+
+// Refined editorial serif for display headings.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  display: "swap",
+  axes: ["opsz", "SOFT"],
 });
 
 export const metadata = {
-  title: "AI Counsellor - Admission Mantrana",
-  description: "AI-Powered Admission Counselling tool for students",
+  title: "counsa.ai — AI Admission Counsellor",
+  description:
+    "Calm, personalized guidance for TGEAPCET & JEE college admissions, powered by AI.",
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body className="antialiased">{children}</body>
+    <html lang="en" className={`${jakarta.variable} ${fraunces.variable}`}>
+      <body>{children}</body>
     </html>
   );
 }

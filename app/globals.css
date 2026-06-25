@@ -1,36 +1,149 @@
+/* ============================================================
+   counsa.ai — "Warm Signal" design system
+   A crisp light surface and a deep charcoal shell, tied
+   together by one confident amber-orange accent. Refined
+   serif display (Fraunces) over a clean Inter body. Fully
+   themed: light is the default, [data-theme="dark"] flips it.
+   ============================================================ */
+
 :root {
-  --background: #0f1115;
-  --foreground: #f3f4f6;
-  --primary: #6366f1;
-  --primary-hover: #4f46e5;
-  --secondary: #1f2229;
-  --secondary-hover: #292d36;
-  --accent: #8b5cf6;
-  --glass-bg: rgba(31, 34, 41, 0.6);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --success: #10b981;
-  --error: #ef4444;
+  color-scheme: light;
+
+  /* ── Canvas & surfaces ── */
+  --canvas:       #f4f4f6;   /* soft neutral page */
+  --canvas-2:     #ececef;   /* deeper neutral for insets / rails */
+  --surface:      #ffffff;
+  --surface-2:    #f8f8fa;
+  --line:         #e7e7ec;   /* hairline borders */
+  --line-strong:  #d9d9e0;
+
+  /* ── Ink (text) ── */
+  --ink:        #16161d;     /* primary text */
+  --ink-soft:   #41414d;     /* secondary text */
+  --ink-muted:  #5c5c68;     /* tertiary / labels — AA on canvas (6.0:1) & surface (6.6:1) */
+  --ink-faint:  #7e7e89;     /* placeholders / hints — legible disclaimers (3.65:1 on canvas) */
+
+  /* ── Accent: warm amber-orange ── */
+  --accent:       #ee5d1c;
+  --accent-hover: #d44f12;
+  --accent-press: #b8430d;
+  --accent-soft:  #fdeadf;   /* tinted fills */
+  --accent-line:  #f6cdb4;   /* tinted borders */
+  --accent-ring:  rgba(238, 93, 28, 0.22);
+  --accent-on:    #ffffff;   /* text/icon on a filled accent */
+
+  /* ── Semantic ── */
+  --success:      #0e9f6e;
+  --success-soft: #e6f6ef;
+  --danger:       #dc2626;
+  --danger-soft:  #fdecec;
+
+  /* ── Chrome ── */
+  --header-bg:    rgba(244, 244, 246, 0.82);  /* sticky header (blurred) */
+  --scroll-thumb: rgba(22, 22, 29, 0.16);
+  --scroll-thumb-hover: rgba(22, 22, 29, 0.30);
+
+  /* ── Elevation ── */
+  --shadow-xs: 0 1px 2px rgba(22, 22, 29, 0.05);
+  --shadow-sm: 0 1px 2px rgba(22, 22, 29, 0.04), 0 4px 12px rgba(22, 22, 29, 0.05);
+  --shadow-md: 0 4px 14px rgba(22, 22, 29, 0.06), 0 14px 34px rgba(22, 22, 29, 0.08);
+  --shadow-lg: 0 12px 28px rgba(22, 22, 29, 0.10), 0 34px 64px rgba(22, 22, 29, 0.12);
+
+  /* ── Radii ── */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-pill: 999px;
+
+  /* ── Type ── */
+  --font-serif: var(--font-fraunces), 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-sans:  var(--font-jakarta), 'Plus Jakarta Sans', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+
+  /* ── Legacy aliases (kept so older references don't break) ── */
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --primary: var(--accent);
+  --primary-hover: var(--accent-hover);
+  --secondary: var(--surface-2);
+  --secondary-hover: var(--canvas-2);
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: var(--line);
+  --error: var(--danger);
 }
 
-html {
-  height: 100%;
+/* ── Dark theme ─────────────────────────────────────────────
+   Deep, slightly-cool charcoal (never pure black) so the amber
+   accent and white text stay comfortable. */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas:       #0f0f14;
+  --canvas-2:     #16161d;
+  --surface:      #1a1a22;
+  --surface-2:    #21212b;
+  --line:         rgba(255, 255, 255, 0.08);
+  --line-strong:  rgba(255, 255, 255, 0.15);
+
+  --ink:        #ecedf2;
+  --ink-soft:   #c2c3cf;
+  --ink-muted:  #8b8c9a;
+  --ink-faint:  #61626e;
+
+  --accent:       #ff7a36;   /* brightened so it pops on charcoal */
+  --accent-hover: #ff8d52;
+  --accent-press: #f06a22;
+  --accent-soft:  rgba(255, 122, 54, 0.15);
+  --accent-line:  rgba(255, 122, 54, 0.32);
+  --accent-ring:  rgba(255, 122, 54, 0.30);
+  --accent-on:    #1a1208;
+
+  --success-soft: rgba(14, 159, 110, 0.16);
+  --danger:       #f87171;
+  --danger-soft:  rgba(248, 113, 113, 0.15);
+
+  --header-bg:    rgba(15, 15, 20, 0.78);
+  --scroll-thumb: rgba(255, 255, 255, 0.14);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.26);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30), 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.38), 0 14px 34px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.45), 0 34px 64px rgba(0, 0, 0, 0.55);
+
+  --glass-bg: rgba(26, 26, 34, 0.7);
 }
+
+html { height: 100%; }
 
 html,
 body {
   max-width: 100vw;
-  overflow-x: hidden;
+  /* `clip` (not `hidden`) prevents horizontal scroll WITHOUT creating a scroll
+     container — so `position: sticky` (nav, scroll-scrub video) keeps working. */
+  overflow-x: clip;
 }
 
 body {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
-  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
+  color: var(--ink);
+  background-color: var(--canvas);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* A barely-there amber wash so the surface isn't dead flat. */
+  background-image:
+    radial-gradient(60rem 42rem at 10% -10%, rgba(238, 93, 28, 0.06), transparent 60%),
+    radial-gradient(46rem 34rem at 108% 4%, rgba(238, 93, 28, 0.035), transparent 55%);
+  background-attachment: fixed;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+[data-theme="dark"] body {
+  background-image:
+    radial-gradient(58rem 40rem at 8% -12%, rgba(255, 122, 54, 0.10), transparent 58%),
+    radial-gradient(44rem 32rem at 110% 2%, rgba(255, 122, 54, 0.05), transparent 55%);
 }
 
 * {
@@ -44,25 +157,45 @@ a {
   text-decoration: none;
 }
 
-/* Glassmorphism Utilities */
-.glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border);
+::selection {
+  background: var(--accent-soft);
+  color: var(--accent-press);
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+  border-radius: var(--r-sm);
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+/* Soft card utility (kept for the .glass class some markup still uses). */
+.glass {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: var(--secondary-hover);
-  border-radius: 4px;
+  background: var(--scroll-thumb);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: var(--primary);
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: padding-box; }
+
+/* ── Reduced motion ──────────────────────────────────────────
+   Honour the OS preference: neutralise every animation/transition
+   app-wide (shimmer, spin, fade/rise) without removing final states. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

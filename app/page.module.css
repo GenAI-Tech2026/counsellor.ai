@@ -1,83 +1,110 @@
 .main {
+  flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  padding: 2rem;
-  text-align: center;
-  background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.15), transparent 40%),
-              radial-gradient(circle at bottom left, rgba(139, 92, 246, 0.15), transparent 40%);
+  padding: 2rem 1.5rem;
 }
 
-.heroCard {
-  max-width: 800px;
-  padding: 4rem 2rem;
-  border-radius: 24px;
+.hero {
+  width: 100%;
+  max-width: 640px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.5rem;
-  animation: fadeIn 0.8s ease-out;
+  text-align: center;
+  gap: 1.25rem;
+  animation: rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .badge {
-  background: rgba(99, 102, 241, 0.1);
-  color: var(--primary);
-  padding: 0.5rem 1rem;
-  border-radius: 9999px;
-  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  letter-spacing: 0.01em;
+  color: var(--accent-press);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-pill);
 }
 
 .title {
-  font-size: clamp(2.5rem, 5vw, 4.5rem);
-  font-weight: 800;
-  line-height: 1.1;
-  background: linear-gradient(to right, var(--foreground), #a5b4fc);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  font-weight: 560;
+  font-size: clamp(2.4rem, 6.5vw, 3.75rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.title em {
+  font-style: italic;
+  color: var(--accent);
 }
 
-.description {
-  font-size: 1.125rem;
-  color: #9ca3af;
-  max-width: 600px;
-  line-height: 1.6;
+.lede {
+  font-size: clamp(1rem, 2.2vw, 1.15rem);
+  line-height: 1.65;
+  color: var(--ink-soft);
+  max-width: 46ch;
 }
 
-.ctaButton {
-  margin-top: 2rem;
-  padding: 1rem 2.5rem;
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: white;
-  background: var(--primary);
-  border: none;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.3s ease;
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.primary {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.39);
+  padding: 0.85rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent-on);
+  background: var(--accent);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-sm);
+  transition: background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+.primary:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
-.ctaButton:hover {
-  background: var(--primary-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.85rem 1.4rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.secondary:hover {
+  background: var(--surface-2);
+  border-color: var(--ink-faint);
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.note {
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  margin-top: 0.25rem;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
