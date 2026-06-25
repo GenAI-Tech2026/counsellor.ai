@@ -7,7 +7,6 @@ import {
 } from '@/lib/rag';
 import { SYSTEM_PROMPT } from '@/lib/system-prompt';
 import { checkRateLimit, checkGlobalBudget, MAX_PER_HOUR, GUEST_MAX_PER_HOUR } from '@/lib/ratelimit';
-import { checkCache, storeCache } from '@/lib/semantic-cache';
 import { createClient } from '@/lib/supabase/server';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-for-build');
@@ -191,6 +190,81 @@ function sanitizeParams(p) {
   return out;
 }
 
+// Build the final college answer DETERMINISTICALLY from model-extracted rows.
+// Classification, the "5 nearest to the rank" selection, and formatting all
+// happen here in code — so Safe/Borderline is never mis-judged by the model.
+//   Safe       = closing rank >= 1.2× the student's rank (comfortably within).
+//   Borderline = closing rank in [0.85×, 1.2×) the rank (near / just-short).
+//   (closing < 0.85× rank is dropped — too far below to be relevant.)
+function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
+  let items = (Array.isArray(rows) ? rows : [])
+    .map((r) => ({
+      college: String(r?.college || '').trim(),
+      branch: String(r?.branch || '').trim(),
+      closing: Math.trunc(Number(r?.closing)),
+      phase: String(r?.phase || '').trim(),
+    }))
+    .filter((r) => r.college && Number.isFinite(r.closing) && r.closing > 0);
+
+  // Optional loose branch filter — only if it leaves something to show.
+  if (branchPref) {
+    const toks = (branchPref.toLowerCase().match(/[a-z]{3,}/g) || [])
+      .filter((t) => !['and', 'the', 'engineering', 'branch', 'prefer', 'preferred'].includes(t));
+    if (toks.length) {
+      const matched = items.filter((r) => {
+        const b = r.branch.toLowerCase();
+        return toks.some((t) => b.includes(t));
+      });
+      if (matched.length) items = matched;
+    }
+  }
+
+  // Dedupe by college+branch, keeping the entry closest to the rank.
+  const seen = new Map();
+  for (const r of items) {
+    const key = `${r.college}|${r.branch}`.toLowerCase();
+    const prev = seen.get(key);
+    if (!prev || Math.abs(r.closing - rank) < Math.abs(prev.closing - rank)) seen.set(key, r);
+  }
+  const uniq = [...seen.values()];
+
+  const safeCut = rank * 1.2;
+  const lowCut = rank * 0.85;
+  const safe = uniq
+    .filter((r) => r.closing >= safeCut)
+    .sort((a, b) => a.closing - b.closing) // nearest-above first
+    .slice(0, 5);
+  const border = uniq
+    .filter((r) => r.closing >= lowCut && r.closing < safeCut)
+    .sort((a, b) => Math.abs(a.closing - rank) - Math.abs(b.closing - rank))
+    .slice(0, 5);
+
+  const rankStr = rank.toLocaleString('en-IN');
+  if (!safe.length && !border.length) {
+    return `I couldn't find colleges close to your rank of ${rankStr} (${catLabel}) in the available data. Try a different branch or location, or double-check the rank.`;
+  }
+
+  const table = (list) => [
+    `| Institute/College | Program/Branch | Closing/Last Rank (${catLabel}) | Phase/Round |`,
+    '| :--- | :--- | :--- | :--- |',
+    ...list.map((r) => `| ${r.college} | ${r.branch} | ${r.closing.toLocaleString('en-IN')} | ${r.phase || '—'} |`),
+  ].join('\n');
+
+  const total = safe.length + border.length;
+  const parts = [
+    `Here ${total === 1 ? 'is the college' : `are the ${total} colleges`} closest to your rank of ${rankStr} (${catLabel}):`,
+    '',
+    '### 🟢 Safe colleges',
+    safe.length ? table(safe) : '_No safe colleges near your rank in the available data._',
+    '',
+    '### 🟡 Borderline colleges',
+    border.length ? table(border) : 'No borderline colleges in the available data for this profile.',
+    '',
+    '_Based on the most recent available data; future cutoffs may differ._',
+  ];
+  return parts.join('\n');
+}
+
 export async function POST(req) {
   const t0 = Date.now();
   const timing = process.env.CHAT_TIMING === '1';
@@ -296,26 +370,8 @@ export async function POST(req) {
     return h;
   };
 
-  // 4. Exact-key response cache (only when all params known — deterministic).
-  //    A hit skips both the retrieval and the answer Gemini call.
-  if (hasAllRequired) {
-    try {
-      const cacheResult = await checkCache(message, resolved);
-      if (cacheResult.hit) {
-        mark('cache_hit');
-        if (timing) console.log('[chat] cache HIT', JSON.stringify(marks));
-        const cached = new TextEncoder().encode(cacheResult.response);
-        const stream = new ReadableStream({
-          start(controller) { controller.enqueue(cached); controller.close(); },
-        });
-        return new Response(stream, {
-          headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8', 'X-Cache': 'HIT' }),
-        });
-      }
-    } catch {
-      // Cache miss / unavailable — proceed normally
-    }
-  }
+  // 4. (Response cache removed — every turn is generated fresh so answers always
+  //    reflect the latest data + prompt/classification logic.)
 
   // 5. Decide retrieval strategy (exam-aware). Each exam has its own Supabase
   //    table + retriever; when all eligibility params are known we filter the
@@ -338,7 +394,7 @@ export async function POST(req) {
         const seatType = JEE_SEAT_TYPE[String(category).toUpperCase()] || null;
         const genderVal = JEE_GENDER[gender] ?? null;
         const parts = [label, category, gender, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
-        ({ contextBlock } = await retrieve(parts.join(' '), 24, { rank: retrievalMinRank, seatType, gender: genderVal }));
+        ({ contextBlock } = await retrieve(parts.join(' '), 40, { rank: retrievalMinRank, seatType, gender: genderVal }));
       } else if (!hasRank) {
         ({ contextBlock } = await retrieve(message, 6));
       }
@@ -348,7 +404,7 @@ export async function POST(req) {
         const fieldName = APEAMCET_CATEGORY_FIELD[category]?.[gender];
         const whereFilter = fieldName ? { [fieldName]: { '$gte': retrievalMinRank } } : null;
         const parts = ['APEAMCET 2022', category, gender, `rank ${rank}`, 'eligible colleges last rank', ...prefParts];
-        ({ contextBlock } = await retrieveApeamcetContext(parts.join(' '), 24, whereFilter));
+        ({ contextBlock } = await retrieveApeamcetContext(parts.join(' '), 40, whereFilter));
       } else if (!hasRank) {
         ({ contextBlock } = await retrieveApeamcetContext(message, 6));
       }
@@ -357,7 +413,7 @@ export async function POST(req) {
       if (hasAllRequired) {
         const code = KCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['KCET 2024 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
-        ({ contextBlock } = await retrieveKcetContext(parts.join(' '), 24, { rankField: code, rank: retrievalMinRank }));
+        ({ contextBlock } = await retrieveKcetContext(parts.join(' '), 40, { rankField: code, rank: retrievalMinRank }));
       } else if (!hasRank) {
         ({ contextBlock } = await retrieveKcetContext(message, 6));
       }
@@ -366,7 +422,7 @@ export async function POST(req) {
       if (hasAllRequired) {
         const code = MHTCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['MHT-CET 2024 Engineering', category, `CET merit number ${rank}`, 'eligible colleges closing rank', ...prefParts];
-        ({ contextBlock } = await retrieveMhtcetContext(parts.join(' '), 24, { rankField: code, rank: retrievalMinRank }));
+        ({ contextBlock } = await retrieveMhtcetContext(parts.join(' '), 40, { rankField: code, rank: retrievalMinRank }));
       } else if (!hasRank) {
         ({ contextBlock } = await retrieveMhtcetContext(message, 6));
       }
@@ -376,7 +432,7 @@ export async function POST(req) {
         const fieldName = CATEGORY_FIELD[category]?.[gender];
         const whereFilter = fieldName ? { [fieldName]: { '$gte': retrievalMinRank } } : null;
         const parts = ['TGEAPCET 2025', category, gender, `rank ${rank}`, 'eligible colleges last rank cutoff', ...prefParts];
-        ({ contextBlock } = await retrieveContext(parts.join(' '), 24, whereFilter));
+        ({ contextBlock } = await retrieveContext(parts.join(' '), 40, whereFilter));
       } else if (!hasRank) {
         ({ contextBlock } = await retrieveContext(message, 6));
       }
@@ -413,15 +469,62 @@ export async function POST(req) {
   }));
 
   // 8. Generate the answer.
-  // QA pass (#qa): when we have retrieved context to check against, we first
-  // get a DRAFT, then run a verification model that re-grounds it — every
-  // college/number must come from the context, Safe/Borderline must be
-  // classified strictly by closing-rank vs the student's rank, no data
-  // year/source-year may leak, and it must stay on-topic. The *verified* answer
-  // is what we stream. Disable with CHAT_QA_VERIFY=0. With no context (the bot
-  // is just asking a question), we skip QA and stream directly for speed.
-  const qaEnabled = process.env.CHAT_QA_VERIFY !== '0' && !!contextBlock && hasAllRequired;
+  // When all params are known AND we retrieved context, we use a DETERMINISTIC
+  // path: the model only EXTRACTS the eligible colleges from the context as JSON
+  // (a transcription task it does reliably); then code does the Safe/Borderline
+  // classification, the "5 nearest to the rank" selection, and the formatting —
+  // so the boundary is never mis-judged. Otherwise (bot is asking a question),
+  // we stream the model's conversational reply directly.
+  const useDeterministic = !!contextBlock && hasAllRequired;
   try {
+    if (useDeterministic) {
+      const genderLabel = genderMatters ? (gender === 'girls' ? 'Girls' : 'Boys') : '';
+      const catLabel = [category, genderLabel].filter(Boolean).join(' ');
+      const extractModel = genAI.getGenerativeModel({
+        model: 'gemini-3.1-flash-lite',
+        generationConfig: { responseMimeType: 'application/json', temperature: 0, maxOutputTokens: 8192 },
+      });
+      const extractPrompt = `From the RETRIEVED CONTEXT, extract every college-branch row and output ONLY a JSON array (no prose).
+
+RETRIEVED CONTEXT (${contextLabel}):
+"""
+${contextBlock}
+"""
+
+For EACH row, output: { "college": "<institute name>", "branch": "<program/branch>", "closing": <the closing/last rank for "${catLabel}" as an integer>, "phase": "<phase/round>" }
+Rules:
+- "closing" MUST be the rank listed for the student's exact category "${catLabel}". If that category has no rank for a row, skip the row.
+- Copy numbers EXACTLY from the context (digits only, no commas). Never invent. Output [] if none.`;
+
+      let rows = [];
+      try {
+        const r = await extractModel.generateContent(extractPrompt);
+        const txt = r.response.text().trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        const parsed = JSON.parse(txt);
+        if (Array.isArray(parsed)) rows = parsed;
+        else if (parsed && typeof parsed === 'object') {
+          // Some responses wrap the array in an object — grab the first array value.
+          const arr = Object.values(parsed).find((v) => Array.isArray(v));
+          if (arr) rows = arr;
+        }
+      } catch (e) {
+        console.error('College extract parse failed:', e.message);
+        rows = [];
+      }
+      mark('extract');
+      if (timing) console.log('[chat] deterministic', JSON.stringify(marks));
+
+      const finalText = buildCollegeAnswer(rows, { rank, catLabel, branchPref: branch_preference });
+      const out = new TextEncoder().encode(finalText);
+      const stream = new ReadableStream({
+        start(controller) { controller.enqueue(out); controller.close(); },
+      });
+      return new Response(stream, {
+        headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
+      });
+    }
+
+    // Conversational path (asking for a missing detail, off-topic, etc.) — stream.
     const model = genAI.getGenerativeModel({
       model: 'gemini-3.1-flash-lite',
       systemInstruction: SYSTEM_PROMPT,
@@ -430,73 +533,22 @@ export async function POST(req) {
       history: chatHistory,
       generationConfig: { maxOutputTokens: 2048 },
     });
-
-    // Producer for the token stream we send to the client. In QA mode it yields
-    // the verifier's corrected output; otherwise the model's direct stream.
-    let tokenStream;
-    if (qaEnabled) {
-      const draftResult = await chat.sendMessage(augmentedMessage);
-      const draft = draftResult.response.text();
-      mark('draft');
-
-      const verifyPrompt = `You are a strict QA reviewer for an AI admission counsellor's reply. Re-ground and CORRECT the draft using ONLY the data below.
-
-RETRIEVED CONTEXT (the ONLY source of truth — ${contextLabel}):
-"""
-${contextBlock}
-"""
-${profileLine ? `\n${profileLine}\n` : ''}
-STUDENT MESSAGE:
-"""
-${message}
-"""
-
-DRAFT ANSWER TO REVIEW:
-"""
-${draft}
-"""
-
-Fix the draft so that ALL of these hold, then output the corrected answer:
-1. Every college, branch, and closing/last-rank number appears in the RETRIEVED CONTEXT. Remove anything invented; never alter a number.
-2. Safe vs Borderline is classified PURELY by the closing rank vs the student's rank (a *lower* rank number is better): Safe = closing rank at least ~20% LARGER than the student's rank; Borderline = closing rank from ~15% smaller up to ~20% larger. Branch popularity is irrelevant. Move misclassified rows to the correct section. If no option is in the borderline band, show only Safe and state "No borderline colleges in the available data for this profile." — do NOT move safe colleges into borderline.
-3. Never mention the year/session/cycle of the data anywhere.
-4. Stay strictly on admissions for the provided data; keep the two labelled tables (🟢 Safe, 🟡 Borderline) and the opening one-line count accurate to what you actually list.
-5. Keep the warm, concise tone. Do NOT add reviewer commentary or notes about these checks.
-
-Output ONLY the final corrected answer in markdown (no preamble). If the draft already satisfies everything, output it unchanged.`;
-
-      const verifyModel = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
-      const verifyStream = await verifyModel.generateContentStream({
-        contents: [{ role: 'user', parts: [{ text: verifyPrompt }] }],
-        generationConfig: { maxOutputTokens: 2048, temperature: 0 },
-      });
-      tokenStream = verifyStream.stream;
-    } else {
-      const geminiStream = await chat.sendMessageStream(augmentedMessage);
-      tokenStream = geminiStream.stream;
-    }
+    const geminiStream = await chat.sendMessageStream(augmentedMessage);
     if (timing) console.log('[chat] miss', JSON.stringify(marks));
 
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
-        let fullText = '';
         let first = true;
         try {
-          for await (const chunk of tokenStream) {
+          for await (const chunk of geminiStream.stream) {
             const text = chunk.text();
             if (text) {
               if (first) { first = false; mark('first_token'); if (timing) console.log('[chat] first_token', marks.first_token + 'ms'); }
-              fullText += text;
               controller.enqueue(encoder.encode(text));
             }
           }
-          // Cache the deterministic answer for future identical queries.
-          if (hasAllRequired && fullText.length > 50) {
-            storeCache(resolved, message, fullText);
-          }
         } catch (err) {
-          // Log the detail server-side; never leak provider/internal error text.
           console.error('Chat stream error:', err);
           controller.enqueue(encoder.encode('\n\n_Sorry — something went wrong while generating the response. Please try again._'));
         } finally {

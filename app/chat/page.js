@@ -881,11 +881,15 @@ export default function ChatPage() {
   // left off — asking the next missing detail or showing colleges.
   const answerInChat = (question, value) => {
     if (isLoading || isStreaming) return;
-    // "Any branch" clears the preference rather than storing the literal "any".
-    if (question.key === 'branch_preference' && value === 'any') {
-      updateProfileField('branch_preference', null);
-      sendMessage('Any branch is fine — show all branches.');
-      return;
+    // Branch is optional: once answered (any choice), mark it resolved so the
+    // "refine by branch?" popover never re-appears.
+    if (question.key === 'branch_preference') {
+      setSkipped((s) => ({ ...s, branch_preference: true }));
+      if (value === 'any') {
+        updateProfileField('branch_preference', null);
+        sendMessage('Any branch is fine — show all branches.');
+        return;
+      }
     }
     answerQuestion(question.key, value);
     let text;
@@ -1153,8 +1157,14 @@ export default function ChatPage() {
 
   let popupQuestion = null;
   if (botPresentingResults) {
-    // Only a branch-refine quick-reply is allowed on top of a results table.
-    if (askedKey === 'branch_preference') popupQuestion = askedQuestion;
+    // After results the bot often invites refining by branch. Offer that
+    // quick-reply only ONCE — until the student picks a branch or skips it — so
+    // the recurring "refine by branch?" boilerplate doesn't spam the popover.
+    if (askedKey === 'branch_preference'
+      && !profile?.branch_preference
+      && !skipped.branch_preference) {
+      popupQuestion = askedQuestion;
+    }
   } else if (/[?]/.test(lastBotText)) {
     // Prefer the first still-MISSING detail (handles "which exam is this rank
     // from?" — exam is missing though the sentence says "rank"); else the
@@ -1177,7 +1187,13 @@ export default function ChatPage() {
           <button
             type="button"
             className={styles.qClose}
-            onClick={() => setPopupDismissedAt(messages.length)}
+            onClick={() => {
+              setPopupDismissedAt(messages.length);
+              // Dismissing the optional branch prompt stops it for good.
+              if (popupQuestion.key === 'branch_preference') {
+                setSkipped((s) => ({ ...s, branch_preference: true }));
+              }
+            }}
             aria-label="Dismiss"
           >
             <X size={16} />
