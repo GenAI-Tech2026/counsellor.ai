@@ -169,9 +169,10 @@
   display: none; /* No user avatar — user message is right-aligned */
 }
 .messageBot .avatar {
-  background: var(--accent);
+  /* Using image logo instead of SVG, so no background/box-shadow needed */
+  background: transparent;
   color: #fff;
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
 }
 
 /* ── Bubbles ── */
@@ -1003,23 +1004,21 @@
   align-items: flex-end;
   gap: 0.5rem;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--r-xl);
-  padding: 0.5rem 0.5rem 0.5rem 0.95rem;
-  box-shadow: var(--shadow-sm);
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
 }
-/* Resting state is calm even though the field autofocuses (#7): a plain
-   (pointer/programmatic) focus only nudges the border + a soft ring… */
 .composer:focus-within {
-  border-color: var(--line-strong);
-  box-shadow: 0 0 0 3px var(--accent-ring), var(--shadow-sm);
+  border-color: var(--accent-line);
+  box-shadow: 0 8px 30px var(--accent-soft), 0 0 0 4px var(--accent-ring);
+  transform: translateY(-1px);
 }
-/* …and the strong orange ring is reserved for genuine keyboard focus, where it
-   reads as a deliberate focus indicator rather than an error/active state. */
 .composer:has(.composerInput:focus-visible) {
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 4px var(--accent-ring), var(--shadow-md);
+  box-shadow: 0 8px 30px var(--accent-soft), 0 0 0 4px var(--accent-ring);
+  transform: translateY(-1px);
 }
 
 .composerInput {
@@ -1097,33 +1096,129 @@
   animation: fadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.heroEyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-press);
+  background: var(--accent-soft);
+  padding: 0.35rem 1rem 0.35rem 0.35rem;
+  border-radius: var(--r-pill);
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--accent-line);
+}
+
 .heroMark {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
-  border-radius: var(--r-lg);
-  background: linear-gradient(135deg, var(--accent), var(--accent-press));
-  color: #fff;
-  box-shadow: var(--shadow-md);
-  margin-bottom: 1.25rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .heroTitle {
   font-family: var(--font-serif);
-  font-size: clamp(1.6rem, 4.5vw, 2.4rem);
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--ink);
+  margin-bottom: 1.25rem;
+}
+
+.titleHighlight {
+  color: var(--ink-muted);
+}
+
+.heroDesc {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+/* ── Social Proof ── */
+.socialProof {
+  margin-top: 3.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding-top: 2.5rem;
+  border-top: 1px solid var(--line);
+  width: 100%;
+  max-width: 800px;
+}
+
+.statsBadge {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-sm);
+}
+
+.statsText {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.statsLabel {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
   font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+}
+
+.statsValue {
+  font-size: 0.95rem;
+  font-weight: 700;
   color: var(--ink);
 }
-.heroSub {
-  margin-top: 0.6rem;
-  font-size: 0.98rem;
-  color: var(--ink-muted);
-  line-height: 1.5;
-  max-width: 30rem;
+
+.featuresList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.2rem 2rem;
+}
+
+.featuresList li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.checkIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .heroComposer {
@@ -1309,4 +1404,100 @@
     overflow-wrap: break-word;
     word-break: break-word;
   }
+}
+
+/* --- Lead Capture Modal --- */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(4px);
+}
+
+.modalContent {
+  background: var(--surface, #ffffff);
+  border-radius: 16px;
+  padding: 32px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  border: 1px solid var(--line, #e5e5e5);
+}
+
+.modalContent h2 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  color: var(--ink, #111);
+  font-size: 1.5rem;
+}
+
+.modalContent p {
+  color: var(--ink-soft, #666);
+  margin-bottom: 24px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.leadForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.formGroup {
+  text-align: left;
+}
+
+.formGroup label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink, #333);
+}
+
+.formGroup input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line, #ddd);
+  background: var(--canvas, #fff);
+  color: var(--ink, #111);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.formGroup input:focus {
+  border-color: var(--accent, #0066ff);
+}
+
+.submitBtn {
+  background: var(--accent, #0066ff);
+  color: white;
+  border: none;
+  padding: 14px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: opacity 0.2s;
+}
+
+.submitBtn:hover {
+  opacity: 0.9;
+}
+
+.submitBtn:disabled {
+  background: var(--surface-2, #aaa);
+  cursor: not-allowed;
 }

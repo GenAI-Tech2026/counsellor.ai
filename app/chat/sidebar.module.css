@@ -63,10 +63,10 @@
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  background: var(--accent);
+  background: transparent;
   color: #fff;
   flex-shrink: 0;
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
 }
 .brandName {
   font-size: 0.95rem;

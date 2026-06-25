@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import {
   PanelLeftClose,
@@ -185,7 +186,7 @@ export default function Sidebar({
       <header className={styles.header}>
         <div className={styles.brand}>
           <span className={styles.brandMark} aria-hidden="true">
-            <MessageSquare size={16} />
+            <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={24} height={24} unoptimized />
           </span>
           <span className={styles.brandName}>counsa.ai</span>
         </div>

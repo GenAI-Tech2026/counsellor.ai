@@ -5,12 +5,14 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import styles from './chat.module.css';
 import {
-  ArrowUp, User, Bot, Loader2, BookOpen, ThumbsUp, ThumbsDown, Copy, Check,
+  ArrowUp, User, Loader2, BookOpen, ThumbsUp, ThumbsDown, Copy, Check,
   Download, Menu, GraduationCap, GitCompare, Compass, Square, ArrowDown, X,
   Trophy, ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import Sidebar from './Sidebar';
+import LeadCaptureModal from '@/components/LeadCaptureModal';
 import { createClient } from '@/lib/supabase/client';
 
 const SOURCE_RE = /\[Source:\s*([^\]]+)\]/g;
@@ -253,7 +255,12 @@ function looksLikeRecommendation(text) {
 // already filled but the bot is asking to confirm/correct it (e.g. "confirm
 // your exact rank"). Order = priority when several are mentioned.
 function botAskedKey(text) {
-  if (!text || !/[?]/.test(text)) return null;
+  if (!text) return null;
+  
+  // A bot reply might be a request without a question mark (e.g. "Please tell me your category.")
+  const isAsking = /[?]|please\s+(provide|tell|specify|let\s+me\s+know|confirm)|i\s+(need|would\s+like)\s+to\s+(know|confirm|verify)/i.test(text);
+  if (!isAsking) return null;
+
   const t = text.toLowerCase();
   // Branch first, but only with intent phrasing (so the table header
   // "Program/Branch" never triggers it). Then the more specific fields, and
@@ -596,6 +603,14 @@ export default function ChatPage() {
     setFeedback({});
     setCopiedIndex(null);
     setConvLoading(false);
+    
+    // Clear the active profile when switching conversations to prevent state leakage
+    setProfile(null);
+    prevExamRef.current = undefined;
+    setSkipped({});
+    setRankDraft('');
+    setPopupDismissedAt(-1);
+
     try {
       const res = await fetch(`/api/conversations/${id}`);
       const data = await res.json();
@@ -675,11 +690,6 @@ export default function ChatPage() {
     const convId = await ensureConversation();
     if (convId) persistMessage(convId, 'user', text, []);
 
-    // Quietly append the saved profile so the AI always knows the student's
-    // details, without changing what's shown or stored as their message.
-    const profileContext = buildProfileContext(profile);
-    const apiMessage = profileContext ? `${text}\n\n${profileContext}` : text;
-
     // SHARED CONTRACT: send last turn's resolved profile as `priorParams`
     // (null on the first turn). Cleared chips (#3) are null in `profile`, so
     // they're naturally dropped here. Shape matches the contract exactly.
@@ -703,7 +713,7 @@ export default function ChatPage() {
       res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: apiMessage, history, priorParams }),
+        body: JSON.stringify({ message: text, history, priorParams }),
         signal: controller.signal,
       });
     } catch (err) {
@@ -1092,12 +1102,15 @@ export default function ChatPage() {
   // by branch ("…by a specific location or branch preference?"), and a branch
   // quick-reply there IS helpful.
   const botPresentingResults = looksLikeRecommendation(lastBotText);
-  const askedKey = /[?]/.test(lastBotText) ? botAskedKey(lastBotText) : null;
+  // botAskedKey now internally checks for question marks OR polite request keywords (e.g. "I need to know").
+  const askedKey = botAskedKey(lastBotText);
   const askedQuestion = askedKey
     ? QUESTIONS.find((q) => q.key === askedKey && (!q.showIf || q.showIf(profile)))
     : null;
 
   let popupQuestion = null;
+  const isAskingAnything = askedKey != null || /[?]|please\s+(provide|tell|specify|let\s+me\s+know|confirm)|i\s+(need|would\s+like)\s+to\s+(know|confirm|verify)/i.test(lastBotText);
+  
   if (botPresentingResults) {
     // After results the bot often invites refining by branch. Offer that
     // quick-reply only ONCE — until the student picks a branch or skips it — so
@@ -1107,7 +1120,7 @@ export default function ChatPage() {
       && !skipped.branch_preference) {
       popupQuestion = askedQuestion;
     }
-  } else if (/[?]/.test(lastBotText)) {
+  } else if (isAskingAnything) {
     // Prefer the first still-MISSING detail (handles "which exam is this rank
     // from?" — exam is missing though the sentence says "rank"); else the
     // explicitly-asked field (confirmation / branch).
@@ -1239,6 +1252,7 @@ export default function ChatPage() {
 
   return (
     <div className={styles.shell}>
+      <LeadCaptureModal user={user} />
       <Sidebar
         conversations={conversations}
         activeId={activeId}
@@ -1307,7 +1321,7 @@ export default function ChatPage() {
                   className={`${styles.messageWrapper} ${isUser ? styles.messageUser : styles.messageBot}`}
                 >
                   <div className={styles.avatar}>
-                    {isUser ? <User size={16} /> : <Bot size={16} />}
+                    {isUser ? <User size={16} /> : <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={16} height={16} unoptimized />}
                   </div>
                   <div className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleBot}`}>
                     {isUser ? (
@@ -1378,7 +1392,7 @@ export default function ChatPage() {
             {isLoading && (
               <div className={`${styles.messageWrapper} ${styles.messageBot}`}>
                 <div className={styles.avatar}>
-                  <Bot size={16} />
+                  <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={16} height={16} unoptimized />
                 </div>
                 <div className={`${styles.bubble} ${styles.bubbleBot} ${styles.thinkingBubble}`}>
                   <Loader2 size={16} className={styles.spinner} />
@@ -1418,12 +1432,20 @@ export default function ChatPage() {
         /* ── Hero / empty state ── */
         <main className={styles.hero}>
           <div className={styles.heroInner}>
-            <span className={styles.heroMark} aria-hidden="true">
-              <Bot size={30} />
-            </span>
-            <h1 className={styles.heroTitle}>What can I help you with today?</h1>
-            <p className={styles.heroSub}>
-              Tell me your exam and rank — I&apos;ll map out the colleges within reach.
+            <div className={styles.heroEyebrow}>
+              <span className={styles.heroMark} aria-hidden="true">
+                <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={28} height={28} unoptimized />
+              </span>
+              India&apos;s first AI engineering counsellor
+            </div>
+            
+            <h1 className={styles.heroTitle}>
+              Tell me your rank.<br />
+              <span className={styles.titleHighlight}>I&apos;ll show you the colleges it actually gets you.</span>
+            </h1>
+            
+            <p className={styles.heroDesc}>
+              Counsa reads your JEE rank, category and home state — then recommends the right colleges with the judgment of 15 years of counselling and an IITian&apos;s eye for what&apos;s worth taking.
             </p>
 
             <div className={styles.heroComposer}>
@@ -1431,22 +1453,28 @@ export default function ChatPage() {
               {rateHint}
             </div>
 
-            <div className={styles.suggestions}>
-              {SUGGESTIONS.map(({ icon: Icon, title, desc, prompt }) => (
-                <button
-                  key={title}
-                  type="button"
-                  className={styles.suggestionCard}
-                  onClick={() => fillPrompt(prompt)}
-                  disabled={isLoading || isStreaming}
-                >
-                  <span className={styles.suggestionIcon}>
-                    <Icon size={18} />
-                  </span>
-                  <span className={styles.suggestionTitle}>{title}</span>
-                  <span className={styles.suggestionDesc}>{desc}</span>
-                </button>
-              ))}
+            <div className={styles.socialProof}>
+              <div className={styles.statsBadge}>
+                <div className={styles.statsText}>
+                  <span className={styles.statsLabel}>Already guiding</span>
+                  <span className={styles.statsValue}>1,000+ students</span>
+                </div>
+              </div>
+              
+              <ul className={styles.featuresList}>
+                <li>
+                  <span className={styles.checkIcon}><Check size={14} strokeWidth={3} /></span>
+                  15+ years of counselling experience
+                </li>
+                <li>
+                  <span className={styles.checkIcon}><Check size={14} strokeWidth={3} /></span>
+                  An IITian&apos;s touch on every recommendation
+                </li>
+                <li>
+                  <span className={styles.checkIcon}><Check size={14} strokeWidth={3} /></span>
+                  Trained on 6 years of JoSAA and Other Exams data
+                </li>
+              </ul>
             </div>
 
             <p className={styles.disclaimer}>
