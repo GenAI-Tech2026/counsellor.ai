@@ -240,6 +240,9 @@ function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
     .slice(0, 5);
 
   const rankStr = rank.toLocaleString('en-IN');
+  if (items.length === 0) {
+    return `I'm having trouble analyzing the college data right now (API extraction failed). Please try asking again.`;
+  }
   if (!safe.length && !border.length) {
     return `I couldn't find colleges close to your rank of ${rankStr} (${catLabel}) in the available data. Try a different branch or location, or double-check the rank.`;
   }
@@ -347,6 +350,9 @@ export async function POST(req) {
   for (const [k, v] of Object.entries(params || {})) {
     if (v != null) resolved[k] = v;
   }
+  if (typeof resolved.category === 'string') resolved.category = resolved.category.toUpperCase();
+  if (typeof resolved.gender === 'string') resolved.gender = resolved.gender.toLowerCase();
+
   const { rank, exam, category, gender, branch_preference, location_preference } = resolved;
 
   const hasRank = rank != null;
@@ -354,6 +360,8 @@ export async function POST(req) {
   // seats), but NOT for KCET / MHT-CET (their category codes are gender-neutral).
   const genderMatters = exam !== 'KCET' && exam !== 'MHTCET';
   const hasAllRequired = hasRank && !!category && (genderMatters ? !!gender : true);
+
+  console.log("RESOLVED:", resolved, "HAS_ALL_REQUIRED:", hasAllRequired);
 
   // Eligibility filters keep only colleges whose closing rank ≥ this bound. We
   // widen it ~15% below the student's true rank so the corpus also includes
