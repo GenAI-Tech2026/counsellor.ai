@@ -8,6 +8,25 @@ import styles from './profile.module.css';
 
 const EMPTY = { exam: '', rank: '', category: '', gender: '' };
 
+// Exam / category options — kept in sync with the chat's quick-details form.
+const EXAMS = [
+  { value: 'TGEAPCET', label: 'TGEAPCET' },
+  { value: 'APEAMCET', label: 'AP EAPCET' },
+  { value: 'JEE', label: 'JEE Main' },
+  { value: 'JEE Advanced', label: 'JEE Advanced' },
+  { value: 'KCET', label: 'KCET' },
+  { value: 'MHTCET', label: 'MHT-CET' },
+];
+const CATEGORIES = {
+  TGEAPCET: ['OC', 'BC-A', 'BC-B', 'BC-C', 'BC-D', 'BC-E', 'SC-I', 'SC-II', 'SC-III', 'ST', 'EWS'],
+  APEAMCET: ['OC', 'BC-A', 'BC-B', 'BC-C', 'BC-D', 'BC-E', 'SC', 'ST', 'EWS'],
+  JEE: ['OPEN', 'OBC-NCL', 'SC', 'ST', 'EWS'],
+  'JEE Advanced': ['OPEN', 'OBC-NCL', 'SC', 'ST', 'EWS'],
+  KCET: ['GM', '1', '2A', '2B', '3A', '3B', 'SC', 'ST'],
+  MHTCET: ['General', 'OBC', 'SC', 'ST', 'EWS', 'VJ', 'NT1', 'NT2', 'NT3', 'SEBC'],
+};
+const genderNeeded = (exam) => Boolean(exam) && exam !== 'KCET' && exam !== 'MHTCET';
+
 export default function ProfilePage() {
   const supabase = useMemo(() => createClient(), []);
 
@@ -30,11 +49,15 @@ export default function ProfilePage() {
         const res = await fetch('/api/profile');
         const { profile } = await res.json();
         if (active && profile) {
+          // Back-compat: older saves used male/female.
+          const g = profile.gender === 'female' ? 'girls'
+            : profile.gender === 'male' ? 'boys'
+            : (profile.gender ?? '');
           setForm({
             exam: profile.exam ?? '',
             rank: profile.rank ?? '',
             category: profile.category ?? '',
-            gender: profile.gender ?? '',
+            gender: g,
           });
         }
       } catch {
@@ -47,7 +70,20 @@ export default function ProfilePage() {
   }, [supabase]);
 
   const update = (key) => (e) => {
-    setForm((f) => ({ ...f, [key]: e.target.value }));
+    const value = e.target.value;
+    setForm((f) => {
+      const next = { ...f, [key]: value };
+      if (key === 'exam') {
+        if (next.category && !(CATEGORIES[value] || []).includes(next.category)) next.category = '';
+        if (!genderNeeded(value)) next.gender = '';
+      }
+      return next;
+    });
+    setSaved(false);
+  };
+
+  const setGender = (g) => {
+    setForm((f) => ({ ...f, gender: f.gender === g ? '' : g }));
     setSaved(false);
   };
 
@@ -71,14 +107,18 @@ export default function ProfilePage() {
     }
   };
 
+  const categoryOptions = CATEGORIES[form.exam] || [];
+  const showGender = genderNeeded(form.exam);
+
   return (
     <main className={styles.main}>
-      <div className={styles.card}>
-        <Link href="/chat" className={styles.back}>
-          <ArrowLeft size={16} />
-          <span>Back to chat</span>
-        </Link>
+      {/* Always-visible back control (#nav) — prominent, top-left, easy to hit. */}
+      <Link href="/chat" className={styles.backBtn}>
+        <ArrowLeft size={17} />
+        <span>Back to chat</span>
+      </Link>
 
+      <div className={styles.card}>
         <div className={styles.heading}>
           <span className={styles.headIcon}><UserCog size={20} /></span>
           <div>
@@ -106,8 +146,7 @@ export default function ProfilePage() {
               <span className={styles.label}>Exam</span>
               <select className={styles.input} value={form.exam} onChange={update('exam')}>
                 <option value="">Not set</option>
-                <option value="TGEAPCET">TGEAPCET</option>
-                <option value="JEE">JEE</option>
+                {EXAMS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>
 
@@ -125,23 +164,34 @@ export default function ProfilePage() {
 
             <label className={styles.field}>
               <span className={styles.label}>Category</span>
-              <select className={styles.input} value={form.category} onChange={update('category')}>
-                <option value="">Not set</option>
-                <option value="OC">OC</option>
-                <option value="BC">BC</option>
-                <option value="SC">SC</option>
-                <option value="ST">ST</option>
+              <select
+                className={styles.input}
+                value={form.category}
+                onChange={update('category')}
+                disabled={!form.exam}
+              >
+                <option value="">{form.exam ? 'Not set' : 'Pick an exam first'}</option>
+                {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>
 
-            <label className={styles.field}>
-              <span className={styles.label}>Gender</span>
-              <select className={styles.input} value={form.gender} onChange={update('gender')}>
-                <option value="">Not set</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-              </select>
-            </label>
+            {showGender && (
+              <div className={styles.field}>
+                <span className={styles.label}>Gender</span>
+                <div className={styles.genderToggle} role="group" aria-label="Gender">
+                  <button
+                    type="button"
+                    className={`${styles.genderOpt} ${form.gender === 'boys' ? styles.genderActive : ''}`}
+                    onClick={() => setGender('boys')}
+                  >Boys</button>
+                  <button
+                    type="button"
+                    className={`${styles.genderOpt} ${form.gender === 'girls' ? styles.genderActive : ''}`}
+                    onClick={() => setGender('girls')}
+                  >Girls</button>
+                </div>
+              </div>
+            )}
 
             {error && <p className={styles.error}>{error}</p>}
 

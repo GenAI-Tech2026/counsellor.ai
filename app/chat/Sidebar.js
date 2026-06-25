@@ -28,6 +28,38 @@ function startOfDay(value) {
   return d;
 }
 
+// Dependency-free relative time for the conversation rows: "2h ago",
+// "Yesterday", "3d ago", then a short date once it's a week or more out.
+// Returns '' for missing/invalid timestamps so the caller can just omit it.
+function relativeTime(value) {
+  if (!value) return '';
+  const then = new Date(value);
+  if (Number.isNaN(then.getTime())) return '';
+
+  const now = new Date();
+  const diffMs = now.getTime() - then.getTime();
+  const minutes = Math.round(diffMs / 60000);
+
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  // Compare calendar days so "Yesterday" lines up with the date grouping.
+  const days = Math.round((startOfDay(now) - startOfDay(then)) / 86400000);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days}d ago`;
+
+  // A week or more out: drop to a short, locale-aware date.
+  const sameYear = then.getFullYear() === now.getFullYear();
+  return then.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+}
+
 // Bucket conversations (already newest-first) into dated sections, like the
 // "Today / Yesterday" groupings in modern chat apps. Empty groups are dropped.
 function groupConversations(conversations) {
@@ -303,6 +335,17 @@ export default function Sidebar({
                     >
                       <MessageSquare size={16} className={styles.rowIcon} />
                       <span className={styles.rowTitle}>{c.title || 'Untitled chat'}</span>
+                      {(() => {
+                        const rel = relativeTime(c.updated_at);
+                        return rel ? (
+                          <time
+                            className={styles.rowTime}
+                            dateTime={new Date(c.updated_at).toISOString()}
+                          >
+                            {rel}
+                          </time>
+                        ) : null;
+                      })()}
                       <button
                         type="button"
                         className={styles.deleteButton}

@@ -9,6 +9,10 @@
     "lint": "eslint",
     "ingest": "node scripts/ingest.mjs",
     "ingest:jee": "node scripts/ingest-jee.mjs",
+    "ingest:jee-advanced": "node scripts/ingest-jee-advanced.mjs",
+    "ingest:apeamcet": "node scripts/ingest-apeamcet.mjs",
+    "ingest:kcet": "node scripts/ingest-kcet.mjs",
+    "ingest:mhtcet": "node scripts/ingest-mhtcet.mjs",
     "test:e2e": "node tests/e2e.mjs",
     "dev:all": "next dev"
   },

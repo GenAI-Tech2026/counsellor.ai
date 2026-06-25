@@ -1,12 +1,35 @@
-/* ── Sidebar shell ── */
+/* ── Sidebar shell ──
+   The sidebar is ALWAYS a deep charcoal (in both light and dark themes, like
+   the reference). We do this by re-declaring the design tokens at this scope to
+   a dark palette — every child rule reads var(--ink)/var(--surface)/… so they
+   all flip to dark automatically without per-rule overrides. */
 .sidebar {
+  --canvas:       #121217;
+  --canvas-2:     #17171e;
+  --surface:      #20202a;
+  --surface-2:    #262631;
+  --line:         rgba(255, 255, 255, 0.07);
+  --line-strong:  rgba(255, 255, 255, 0.13);
+  --ink:          #ededf2;
+  --ink-soft:     #c3c4cf;
+  --ink-muted:    #8a8b98;
+  --ink-faint:    #64646f;
+  --accent:       #ff7a36;
+  --accent-hover: #ff8d52;
+  --accent-press: #ef6a22;
+  --accent-soft:  rgba(255, 122, 54, 0.15);
+  --accent-line:  rgba(255, 122, 54, 0.32);
+  --accent-ring:  rgba(255, 122, 54, 0.32);
+  --danger-soft:  rgba(248, 113, 113, 0.16);
+  --shadow-xs:    0 1px 2px rgba(0, 0, 0, 0.3);
+
   display: flex;
   flex-direction: column;
-  width: 260px; /* Slightly narrower */
+  width: 288px;
   flex-shrink: 0;
   height: 100vh;
   height: 100dvh;
-  background: var(--canvas-2); /* deeper warm paper, separates from chat canvas */
+  background: var(--canvas-2);
   border-right: 1px solid var(--line);
   overflow: hidden;
   color: var(--ink);
@@ -101,22 +124,21 @@
   justify-content: center;
   gap: 0.5rem;
   margin: 0.5rem 1.25rem 1rem;
-  padding: 0.6rem 0.875rem;
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-xs);
-  color: var(--ink);
+  padding: 0.65rem 0.875rem;
+  border-radius: var(--r-md);
+  background: var(--accent);
+  border: 1px solid transparent;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 6px 16px rgba(255, 122, 54, 0.22);
+  color: #fff;
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.15s, filter 0.15s;
 }
 .newChat:hover {
-  background: var(--surface-2);
-  border-color: var(--line-strong);
-  box-shadow: var(--shadow-sm);
+  background: var(--accent-hover);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 22px rgba(255, 122, 54, 0.30);
   transform: translateY(-1px);
 }
 .newChat:focus-visible {
@@ -286,6 +308,21 @@
   text-overflow: ellipsis;
 }
 
+/* Subtle relative timestamp, right-aligned. It sits in the same slot as the
+   delete button and yields to it on hover/focus, so there's no layout shift. */
+.rowTime {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.rowActive .rowTime { color: var(--accent); }
+.row:hover .rowTime,
+.row:focus-within .rowTime {
+  opacity: 0;
+}
+
 .deleteButton {
   display: flex;
   align-items: center;
@@ -299,6 +336,8 @@
   cursor: pointer;
   flex-shrink: 0;
   opacity: 0;
+  /* Overlay the timestamp slot rather than push layout when revealed. */
+  margin-left: -24px;
   transition: opacity 0.15s, background 0.15s, color 0.15s;
 }
 .row:hover .deleteButton,
