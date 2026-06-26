@@ -1116,35 +1116,56 @@
 .hero {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  overflow-y: auto;
-  padding: 2rem 1.25rem;
-  z-index: 1;
-}
-.heroInner {
+  padding: 4rem 1.5rem;
   width: 100%;
-  max-width: 880px;
+  position: relative;
+  overflow: hidden;
+}
+
+.heroGlow {
+  position: absolute;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(255, 87, 34, 0.08) 0%, rgba(255, 87, 34, 0) 70%);
+  filter: blur(60px);
+  z-index: 0;
+  pointer-events: none;
+  animation: pulseGlow 8s ease-in-out infinite alternate;
+}
+
+@keyframes pulseGlow {
+  0% { transform: translateX(-50%) scale(1); opacity: 0.8; }
+  100% { transform: translateX(-50%) scale(1.1); opacity: 1; }
+}
+
+.heroInner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 800px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  /* Lift the block slightly above dead-center for a more composed look. */
-  margin-bottom: 4vh;
-  animation: fadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .heroEyebrow {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.6rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 700;
   letter-spacing: 0.05em;
-  color: var(--accent-press);
+  text-transform: uppercase;
+  color: var(--accent);
   background: var(--accent-soft);
-  padding: 0.35rem 1rem 0.35rem 0.35rem;
+  padding: 0.4rem 1rem 0.4rem 0.4rem;
   border-radius: var(--r-pill);
   margin-bottom: 1.5rem;
   border: 1px solid var(--accent-line);
@@ -1272,6 +1293,7 @@
 .featuresList li:hover {
   transform: translateY(-4px);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+  border-color: var(--accent-line);
 }
 
 .checkIcon {
@@ -1306,6 +1328,9 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   transition: all 0.2s ease;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .suggestionPill:hover {
