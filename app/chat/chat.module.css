@@ -44,6 +44,21 @@
   flex: 1;
   min-width: 0;
 }
+
+.headerBrand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 0.5rem;
+  margin-right: auto;
+}
+
+@media (min-width: 769px) {
+  .hideOnDesktop {
+    display: none !important;
+  }
+}
+
 .headerIcon {
   display: flex;
   align-items: center;
@@ -1118,11 +1133,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 4rem 1.5rem;
   width: 100%;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .heroGlow {
@@ -1267,9 +1282,10 @@
   padding: 0;
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 1.25rem;
-  max-width: 600px;
+  width: 100%;
+  max-width: 800px;
 }
 
 .featuresList li {
@@ -1405,6 +1421,29 @@
   margin-top: 0.25rem;
 }
 
+.inMessageUpsellBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1rem;
+  padding: 0.6rem 1.25rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.inMessageUpsellBtn:hover {
+  background: var(--accent-hover);
+}
+.inMessageUpsellBtn:active {
+  transform: scale(0.98);
+}
+
 /* ── Responsive ── */
 /* ── Mobile: hamburger (opens the sidebar drawer) + backdrop ── */
 .menuButton {
@@ -1434,8 +1473,7 @@
     background: rgba(27, 27, 43, 0.42);
     animation: backdropIn 0.2s ease;
   }
-  .exportButton span { display: none; }       /* icon-only download */
-  .exportButton { padding: 0.45rem 0.55rem; }
+  .exportButton { padding: 0.45rem 0.75rem; }
 }
 @keyframes backdropIn { from { opacity: 0; } to { opacity: 1; } }
 
@@ -1454,7 +1492,16 @@
   .bubbleBot { max-width: 100%; }
   .headerTitle h2 { font-size: 1rem; }
 
-  .hero { padding: 1.5rem 1rem; }
+  .hero { 
+    padding: 1.5rem 1rem 2rem 1rem; 
+    justify-content: flex-end; 
+  }
+  .heroInner {
+    margin-top: auto;
+  }
+  .socialProof, .heroEyebrow, .suggestionPills {
+    display: none;
+  }
   .heroComposer { margin-top: 1.25rem; }
   .heroMark { width: 56px; height: 56px; }
 

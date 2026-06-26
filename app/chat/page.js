@@ -8,7 +8,7 @@ import styles from './chat.module.css';
 import {
   ArrowUp, User, Loader2, BookOpen, ThumbsUp, ThumbsDown, Copy, Check,
   Download, Menu, GraduationCap, GitCompare, Compass, Square, ArrowDown, X,
-  Trophy, ArrowRight, Plus, SlidersHorizontal, Paperclip, Search, Sparkles
+  Trophy, ArrowRight, Plus, SlidersHorizontal, Paperclip, Search, Sparkles, UserPlus
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -396,6 +396,8 @@ export default function ChatPage() {
   const [activeId, setActiveId] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [forceAuthOpen, setForceAuthOpen] = useState(false);
 
   // Per-message UI state, keyed by message index (reset when messages reset).
   const [feedback, setFeedback] = useState({}); // index -> 'up' | 'down'
@@ -413,7 +415,6 @@ export default function ChatPage() {
   const prevExamRef = useRef(undefined);
 
   // Transient corner notification (e.g. prompting guests to sign in).
-  const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
   // Remaining hourly quota (#14) read from X-RateLimit-Remaining; null = unknown.
@@ -777,7 +778,9 @@ export default function ChatPage() {
         }
       }
       setMessages(prev => [...prev, { role: 'model', text: errMsg, sources: [] }]);
-      if (upsell) showToast('Sign in (free) to keep chatting.');
+      if (upsell) {
+        setForceAuthOpen(true);
+      }
       return;
     }
 
@@ -1076,11 +1079,8 @@ export default function ChatPage() {
       />
       <div className={styles.composerActions}>
         <div className={styles.composerLeftActions}>
-          <button type="button" className={styles.composerActionBtn} aria-label="Add"><Plus size={16} /></button>
-          <button type="button" className={styles.composerActionBtn} aria-label="Settings"><SlidersHorizontal size={16} /></button>
         </div>
         <div className={styles.composerRightActions}>
-          <button type="button" className={styles.composerActionBtn} aria-label="Attach"><Paperclip size={16} /></button>
           {isStreaming ? (
             <button
               type="button"
@@ -1277,32 +1277,34 @@ export default function ChatPage() {
 
   return (
     <div className={styles.shell}>
-      <LeadCaptureModal user={user} />
+      <LeadCaptureModal 
+        user={user} 
+        forceOpen={forceAuthOpen} 
+        onClose={() => setForceAuthOpen(false)} 
+      />
       <AnimatePresence mode="popLayout">
-        {hasUserMessages && (
-          <motion.div
-            key="sidebar"
-            initial={{ opacity: 0, x: -50, scale: 0.95 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: -50, scale: 0.95 }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            style={{ zIndex: 100 }}
-          >
-            <Sidebar
-              conversations={conversations}
-              activeId={activeId}
-              onSelect={selectConversation}
-              onNew={startNewChat}
-              onDelete={deleteConversation}
-              user={user}
-              loading={convLoading}
-              collapsed={collapsed}
-              onToggle={() => setCollapsed(c => !c)}
-              mobileOpen={mobileNavOpen}
-              onCloseMobile={() => setMobileNavOpen(false)}
-            />
-          </motion.div>
-        )}
+        <motion.div
+          key="sidebar"
+          initial={{ opacity: 0, x: -50, scale: 0.95 }}
+          animate={{ opacity: 1, x: 0, scale: 1 }}
+          exit={{ opacity: 0, x: -50, scale: 0.95 }}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          style={{ zIndex: 100 }}
+        >
+          <Sidebar
+            conversations={conversations}
+            activeId={activeId}
+            onSelect={selectConversation}
+            onNew={startNewChat}
+            onDelete={deleteConversation}
+            user={user}
+            loading={convLoading}
+            collapsed={collapsed}
+            onToggle={() => setCollapsed(c => !c)}
+            mobileOpen={mobileNavOpen}
+            onCloseMobile={() => setMobileNavOpen(false)}
+          />
+        </motion.div>
       </AnimatePresence>
       {mobileNavOpen && (
         <div
@@ -1315,14 +1317,21 @@ export default function ChatPage() {
       <div className={styles.container}>
         {/* Header */}
         <header className={styles.header}>
-          <button
-            type="button"
-            className={styles.menuButton}
-            onClick={() => { setCollapsed(false); setMobileNavOpen(true); }}
-            aria-label="Open menu"
-          >
-            <Menu size={20} />
-          </button>
+          {user && (
+            <button
+              type="button"
+              className={styles.menuButton}
+              onClick={() => { setCollapsed(false); setMobileNavOpen(true); }}
+              aria-label="Open menu"
+            >
+              <Menu size={20} />
+            </button>
+          )}
+          
+          <div className={`${styles.headerBrand} ${!collapsed ? styles.hideOnDesktop : ''}`}>
+            <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={24} height={24} unoptimized />
+            <span style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--ink)' }}>counsa.ai</span>
+          </div>
           {/* Identity lives in the sidebar (#6). Use this space only for
               lightweight context — the resolved exam, when we know it. */}
           <div className={styles.headerContext}>
@@ -1333,17 +1342,31 @@ export default function ChatPage() {
               </span>
             )}
           </div>
-          <button
-            type="button"
-            className={styles.exportButton}
-            onClick={handleExport}
-            disabled={!hasUserMessages}
-            aria-label="Download chat"
-            title="Download chat (.md)"
-          >
-            <Download size={16} />
-            <span>Download</span>
-          </button>
+          {!user ? (
+            <Link
+              href="/login"
+              prefetch={false}
+              className={styles.exportButton}
+              aria-label="Sign up"
+              title="Sign up to save your chats"
+              style={{ textDecoration: 'none' }}
+            >
+              <UserPlus size={16} />
+              <span>Sign up</span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              className={styles.exportButton}
+              onClick={handleExport}
+              disabled={!hasUserMessages}
+              aria-label="Download chat"
+              title="Download chat (.md)"
+            >
+              <Download size={16} />
+              <span>Download</span>
+            </button>
+          )}
         </header>
 
         {hasUserMessages ? (
@@ -1383,8 +1406,20 @@ export default function ChatPage() {
                       </div>
                     )}
 
+                    {/* In-message Sign in button */}
+                    {msg.isUpsell && (
+                      <button 
+                        type="button" 
+                        className={styles.inMessageUpsellBtn} 
+                        onClick={() => setForceAuthOpen(true)}
+                      >
+                        <UserPlus size={16} style={{ marginRight: '6px' }} />
+                        Sign in
+                      </button>
+                    )}
+
                     {/* Feedback + copy actions (bot replies only) */}
-                    {!isUser && !msg.greeting && !msg.streaming && msg.text && (
+                    {!isUser && !msg.greeting && !msg.streaming && msg.text && !msg.isUpsell && (
                       <div className={styles.messageActions}>
                         <button
                           type="button"

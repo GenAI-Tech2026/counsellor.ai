@@ -14,29 +14,34 @@ const INDIAN_STATES = [
   "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
 ];
 
-export default function LeadCaptureModal({ user, onComplete }) {
+export default function LeadCaptureModal({ user, onComplete, forceOpen, onClose }) {
   const [isOpen, setIsOpen] = useState(false);
   const [formData, setFormData] = useState({ firstName: '', lastName: '', phone: '', state: '', email: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
-    // If the user hasn't completed the form, we want the modal open.
-    // If there is no user, they see the login prompt. 
-    // If there is a user, they see the form.
+    if (forceOpen) {
+      setIsOpen(true);
+      return;
+    }
+    // If the user is logged in but hasn't completed the form, we want the modal open to collect phone & state.
+    // If they are a guest (!user), we do NOT pop it up automatically so they can explore the tool.
     const existing = localStorage.getItem('counsa_lead_captured');
-    if (!existing) {
+    const dismissed = sessionStorage.getItem('counsa_lead_dismissed');
+    
+    if (!existing && !dismissed) {
       if (user) {
         setFormData(prev => ({ 
           ...prev, 
           email: user?.email || '' // Pre-fill email if logged in
         }));
+        setIsOpen(true);
       }
-      setIsOpen(true);
     } else {
       onComplete?.();
     }
-  }, [user, onComplete]);
+  }, [user, onComplete, forceOpen]);
 
   const handleGoogleSignIn = async () => {
     setIsRedirecting(true);
@@ -131,6 +136,22 @@ export default function LeadCaptureModal({ user, onComplete }) {
                 </svg>
               </span>
               {isRedirecting ? 'Redirecting...' : 'Continue with Google'}
+            </button>
+            <button 
+              type="button" 
+              onClick={() => {
+                sessionStorage.setItem('counsa_lead_dismissed', 'true');
+                setIsOpen(false);
+                onClose?.();
+              }}
+              style={{
+                background: 'none', border: 'none', color: '#666', 
+                textDecoration: 'underline', marginTop: '1rem', 
+                cursor: 'pointer', fontSize: '0.9rem', width: '100%',
+                display: 'block', textAlign: 'center'
+              }}
+            >
+              Skip for now
             </button>
           </>
         ) : (
