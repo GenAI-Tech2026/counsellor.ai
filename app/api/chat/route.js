@@ -9,6 +9,9 @@ import { SYSTEM_PROMPT } from '@/lib/system-prompt';
 import { checkRateLimit, checkGlobalBudget, MAX_PER_HOUR, GUEST_MAX_PER_HOUR } from '@/lib/ratelimit';
 import { createClient } from '@/lib/supabase/server';
 
+export const maxDuration = 60; // Allow longer execution if on Vercel Pro (Hobby ignores and caps at 10s)
+export const dynamic = 'force-dynamic';
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-for-build');
 
 /**
@@ -270,19 +273,20 @@ function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
 }
 
 export async function POST(req) {
-  const t0 = Date.now();
-  const timing = process.env.CHAT_TIMING === '1';
-  const marks = {};
-  const mark = (name) => { if (timing) marks[name] = Date.now() - t0; };
-
-  // 1. Parse the body FIRST so we can start the (slow) Gemini param extraction
-  //    in parallel with the auth + rate-limit round-trips.
-  let message, history, priorParams;
   try {
-    ({ message, history, priorParams } = await req.json());
-  } catch {
-    return errorResponse(400, 'invalid_request', 'Invalid request body.');
-  }
+    const t0 = Date.now();
+    const timing = process.env.CHAT_TIMING === '1';
+    const marks = {};
+    const mark = (name) => { if (timing) marks[name] = Date.now() - t0; };
+
+    // 1. Parse the body FIRST so we can start the (slow) Gemini param extraction
+    //    in parallel with the auth + rate-limit round-trips.
+    let message, history, priorParams;
+    try {
+      ({ message, history, priorParams } = await req.json());
+    } catch {
+      return errorResponse(400, 'invalid_request', 'Invalid request body.');
+    }
   if (!message?.trim()) {
     return errorResponse(400, 'missing_message', 'Message is required.');
   }
@@ -517,9 +521,8 @@ export async function POST(req) {
   // so the boundary is never mis-judged. Otherwise (bot is asking a question),
   // we stream the model's conversational reply directly.
   const useDeterministic = !!contextBlock && hasAllRequired;
-  try {
-    if (useDeterministic) {
-      const isJee = exam === 'JEE' || exam === 'JEE Advanced';
+  if (useDeterministic) {
+    const isJee = exam === 'JEE' || exam === 'JEE Advanced';
       const genderLabel = genderMatters ? (gender === 'girls' ? 'Girls' : 'Boys') : '';
       const catLabel = [category, genderLabel].filter(Boolean).join(' ');
       
@@ -608,7 +611,7 @@ ${closingRule}
       headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
     });
   } catch (error) {
-    console.error('Gemini error:', error);
-    return errorResponse(500, 'server_error', 'Failed to generate response. Please try again.');
+    console.error('Server error:', error);
+    return errorResponse(500, 'server_error', 'An unexpected error occurred. Please try again.');
   }
 }
