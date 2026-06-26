@@ -8,7 +8,7 @@ import styles from './chat.module.css';
 import {
   ArrowUp, User, Loader2, BookOpen, ThumbsUp, ThumbsDown, Copy, Check,
   Download, Menu, GraduationCap, GitCompare, Compass, Square, ArrowDown, X,
-  Trophy, ArrowRight, Plus, SlidersHorizontal, Paperclip
+  Trophy, ArrowRight, Plus, SlidersHorizontal, Paperclip, Search, Sparkles
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -1467,13 +1467,13 @@ export default function ChatPage() {
         </footer>
         </>
         ) : (
-        /* ── Hero / empty state ── */
         <motion.main 
           className={styles.hero}
           variants={staggerContainer}
           initial="hidden"
           animate="show"
         >
+          <div className={styles.heroGlow} />
           <div className={styles.heroInner}>
             <motion.div variants={fadeUp} className={styles.heroEyebrow}>
               <span className={styles.heroMark} aria-hidden="true">
@@ -1501,7 +1501,7 @@ export default function ChatPage() {
                   className={styles.suggestionPill}
                   onClick={() => setInput("What's the cutoff for CSE at JNTU Kakinada via AP EAMCET?")}
                 >
-                  Cutoff for CSE via AP EAMCET
+                  <Search size={14} /> Cutoff for CSE via AP EAMCET
                 </motion.button>
                 <motion.button 
                   whileHover={{ scale: 1.02 }}
@@ -1509,7 +1509,7 @@ export default function ChatPage() {
                   className={styles.suggestionPill}
                   onClick={() => setInput("Can I get into IIT Bombay with rank 1200?")}
                 >
-                  Can I get into IIT Bombay?
+                  <Sparkles size={14} /> Can I get into IIT Bombay?
                 </motion.button>
                 <motion.button 
                   whileHover={{ scale: 1.02 }}
@@ -1517,7 +1517,7 @@ export default function ChatPage() {
                   className={styles.suggestionPill}
                   onClick={() => setInput("Top CSE colleges via TG EAMCET")}
                 >
-                  Top CSE colleges via TG EAMCET
+                  <Trophy size={14} /> Top CSE colleges via TG EAMCET
                 </motion.button>
               </div>
             </motion.div>
