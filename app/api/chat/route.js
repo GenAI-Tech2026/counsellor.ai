@@ -9,9 +9,6 @@ import { SYSTEM_PROMPT } from '@/lib/system-prompt';
 import { checkRateLimit, checkGlobalBudget, MAX_PER_HOUR, GUEST_MAX_PER_HOUR } from '@/lib/ratelimit';
 import { createClient } from '@/lib/supabase/server';
 
-export const maxDuration = 60; // Allow longer execution if on Vercel Pro (Hobby ignores and caps at 10s)
-export const dynamic = 'force-dynamic';
-
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-for-build');
 
 /**
