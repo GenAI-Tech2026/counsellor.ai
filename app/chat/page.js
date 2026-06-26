@@ -1074,7 +1074,7 @@ export default function ChatPage() {
         onKeyDown={handleComposerKeyDown}
         placeholder="Ask Me Anything..."
         className={styles.composerInput}
-        rows={3}
+        rows={1}
         disabled={busy}
         autoFocus
       />
