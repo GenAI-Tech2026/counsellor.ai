@@ -12,7 +12,8 @@ export default function LoginPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('error') === 'auth') {
-      setHasError(true);
+      const t = setTimeout(() => setHasError(true), 0);
+      return () => clearTimeout(t);
     }
   }, []);
 

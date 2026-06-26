@@ -21,9 +21,10 @@ export default function LeadCaptureModal({ user, onComplete, forceOpen, onClose 
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
+    let t;
     if (forceOpen) {
-      setIsOpen(true);
-      return;
+      t = setTimeout(() => setIsOpen(true), 0);
+      return () => clearTimeout(t);
     }
     // If the user is logged in but hasn't completed the form, we want the modal open to collect phone & state.
     // If they are a guest (!user), we do NOT pop it up automatically so they can explore the tool.
@@ -32,15 +33,18 @@ export default function LeadCaptureModal({ user, onComplete, forceOpen, onClose 
     
     if (!existing && !dismissed) {
       if (user) {
-        setFormData(prev => ({ 
-          ...prev, 
-          email: user?.email || '' // Pre-fill email if logged in
-        }));
-        setIsOpen(true);
+        t = setTimeout(() => {
+          setFormData(prev => ({ 
+            ...prev, 
+            email: user?.email || '' // Pre-fill email if logged in
+          }));
+          setIsOpen(true);
+        }, 0);
       }
     } else {
       onComplete?.();
     }
+    return () => clearTimeout(t);
   }, [user, onComplete, forceOpen]);
 
   const handleGoogleSignIn = async () => {

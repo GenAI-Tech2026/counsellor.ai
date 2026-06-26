@@ -1518,11 +1518,11 @@ export default function ChatPage() {
             </motion.div>
             
             <motion.h1 variants={fadeUp} className={styles.heroTitle}>
-              I'll show you the colleges you can <span className={styles.titleHighlight}>actually get into.</span>
+              I&apos;ll show you the colleges you can <span className={styles.titleHighlight}>actually get into.</span>
             </motion.h1>
             
             <motion.p variants={fadeUp} className={styles.heroDesc}>
-              Counsa instantly analyzes your rank, category, and state to recommend the perfect colleges—combining 15 years of expert counselling with an IITian's judgment.
+              Counsa instantly analyzes your rank, category, and state to recommend the perfect colleges—combining 15 years of expert counselling with an IITian&apos;s judgment.
             </motion.p>
 
             <motion.div variants={fadeUp} className={styles.heroComposer}>
