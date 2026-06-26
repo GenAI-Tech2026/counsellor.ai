@@ -1483,12 +1483,11 @@ export default function ChatPage() {
             </motion.div>
             
             <motion.h1 variants={fadeUp} className={styles.heroTitle}>
-              Tell me your rank.<br />
-              <span className={styles.titleHighlight}>I&apos;ll show you the colleges it actually gets you.</span>
+              I'll show you the colleges you can <span className={styles.titleHighlight}>actually get into.</span>
             </motion.h1>
             
             <motion.p variants={fadeUp} className={styles.heroDesc}>
-              Counsa reads your JEE rank, category and home state — then recommends the right colleges with the judgment of 15 years of counselling and an IITian&apos;s eye for what&apos;s worth taking.
+              Counsa instantly analyzes your rank, category, and state to recommend the perfect colleges—combining 15 years of expert counselling with an IITian's judgment.
             </motion.p>
 
             <motion.div variants={fadeUp} className={styles.heroComposer}>
@@ -1500,9 +1499,9 @@ export default function ChatPage() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   className={styles.suggestionPill}
-                  onClick={() => setInput("What's the cutoff for CSE at NIT Warangal?")}
+                  onClick={() => setInput("What's the cutoff for CSE at JNTU Kakinada via AP EAMCET?")}
                 >
-                  Cutoff for CSE at NIT Warangal
+                  Cutoff for CSE via AP EAMCET
                 </motion.button>
                 <motion.button 
                   whileHover={{ scale: 1.02 }}
@@ -1516,9 +1515,9 @@ export default function ChatPage() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   className={styles.suggestionPill}
-                  onClick={() => setInput("Compare VIT Vellore and SRM University")}
+                  onClick={() => setInput("Top CSE colleges via TG EAMCET")}
                 >
-                  Compare VIT & SRM
+                  Top CSE colleges via TG EAMCET
                 </motion.button>
               </div>
             </motion.div>
@@ -1533,16 +1532,20 @@ export default function ChatPage() {
               
               <ul className={styles.featuresList}>
                 <li>
-                  <span className={styles.checkIcon}><Check size={14} strokeWidth={3} /></span>
+                  <span className={styles.checkIcon}><Trophy size={20} strokeWidth={2.5} /></span>
                   15+ years of counselling experience
                 </li>
                 <li>
-                  <span className={styles.checkIcon}><Check size={14} strokeWidth={3} /></span>
+                  <span className={styles.checkIcon}><GraduationCap size={20} strokeWidth={2.5} /></span>
                   An IITian&apos;s touch on every recommendation
                 </li>
                 <li>
-                  <span className={styles.checkIcon}><Check size={14} strokeWidth={3} /></span>
-                  Trained on 6 years of JoSAA and Other Exams data
+                  <span className={styles.checkIcon}><GitCompare size={20} strokeWidth={2.5} /></span>
+                  Trained on 6 years of JoSAA & State data
+                </li>
+                <li>
+                  <span className={styles.checkIcon}><Compass size={20} strokeWidth={2.5} /></span>
+                  Smart insights across 2000+ colleges
                 </li>
               </ul>
             </motion.div>

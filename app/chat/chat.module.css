@@ -185,22 +185,23 @@
 }
 
 .bubbleUser {
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
+  background: var(--ink);
+  color: #ffffff;
   padding: 0.85rem 1.15rem;
   border-radius: var(--r-lg);
   border-top-right-radius: var(--r-sm);
-  color: var(--ink);
-  box-shadow: var(--shadow-xs);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 .bubbleUser p { margin: 0; }
 
 .bubbleBot {
-  /* No bubble background for bot — plain ink on canvas. Use the full column so
-     wide result tables get all the room available (rather than the 85% cap). */
-  background: transparent;
-  padding: 0;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--r-lg);
+  border-top-left-radius: var(--r-sm);
   color: var(--ink);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
   max-width: 100%;
   width: 100%;
 }
@@ -1244,32 +1245,33 @@
   list-style: none;
   padding: 0;
   margin: 0;
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+  max-width: 600px;
 }
 
 .featuresList li {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 1.25rem;
   font-size: 0.95rem;
   color: var(--ink-soft);
   font-weight: 500;
-  background: var(--glass-bg);
-  backdrop-filter: blur(24px);
+  background: #ffffff;
   border: 1px solid var(--line);
-  padding: 1rem 1.25rem;
-  border-radius: var(--r-xl);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  padding: 1.5rem;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .featuresList li:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
 }
 
 .checkIcon {
@@ -1278,9 +1280,9 @@
   justify-content: center;
   color: var(--accent);
   background: var(--accent-soft);
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
   flex-shrink: 0;
 }
 
@@ -1294,21 +1296,24 @@
 }
 
 .suggestionPill {
-  background: rgba(255, 255, 255, 0.95);
-  color: #1a1a24;
-  border: none;
-  padding: 0.6rem 1.25rem;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  padding: 0.6rem 1.2rem;
   border-radius: var(--r-pill);
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+  font-weight: 500;
 }
 
 .suggestionPill:hover {
+  background: #fafafa;
+  border-color: var(--accent-line);
+  color: var(--ink);
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
 /* ── Suggestion cards ── */

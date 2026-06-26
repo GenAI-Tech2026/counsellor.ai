@@ -82,7 +82,7 @@ JSON schema (null for anything not mentioned):
   "category": <category code or null — see per-exam rules>,
   "gender": <"boys"|"girls" | null>,
   "branch_preference": <plain English or null>,
-  "location_preference": <city/district or null>
+  "location_preference": <city/district/institute name or null>
 }
 
 Exam mapping:
@@ -123,7 +123,8 @@ Category mapping when exam is MHTCET (Maharashtra categories):
 
 Other:
 - "girl / female / she / woman" → "girls"; "boy / male / he / man" → "boys"
-- "five hundred" → 500; "1000" → 1000`;
+- "five hundred" → 500; "1000" → 1000
+- Expand branch abbreviations: "CSE" → "Computer Science", "ECE" → "Electronics and Communication", "EEE" → "Electrical and Electronics", "ME" or "Mech" → "Mechanical Engineering", "IT" → "Information Technology".`;
 
   try {
     const result = await model.generateContent(prompt);
@@ -426,7 +427,9 @@ export async function POST(req) {
         const parts = [label, category, gender, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         ({ contextBlock } = await retrieve(parts.join(' '), 40, { rank: retrievalMinRank, seatType, gender: genderVal }));
       } else if (!hasRank) {
-        ({ contextBlock } = await retrieve(message, 6));
+        const parts = [label, category, gender, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieve(query, 6));
       }
     } else if (exam === 'APEAMCET') {
       contextLabel = 'APEAMCET (AP EAPCET) official last-rank data — eligible colleges only';
@@ -436,7 +439,9 @@ export async function POST(req) {
         const parts = ['APEAMCET 2022', category, gender, `rank ${rank}`, 'eligible colleges last rank', ...prefParts];
         ({ contextBlock } = await retrieveApeamcetContext(parts.join(' '), 40, whereFilter));
       } else if (!hasRank) {
-        ({ contextBlock } = await retrieveApeamcetContext(message, 6));
+        const parts = ['APEAMCET 2022', category, gender, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveApeamcetContext(query, 6));
       }
     } else if (exam === 'KCET') {
       contextLabel = 'KCET Engineering official cutoff data — eligible colleges only';
@@ -445,7 +450,9 @@ export async function POST(req) {
         const parts = ['KCET 2024 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         ({ contextBlock } = await retrieveKcetContext(parts.join(' '), 40, { rankField: code, rank: retrievalMinRank }));
       } else if (!hasRank) {
-        ({ contextBlock } = await retrieveKcetContext(message, 6));
+        const parts = ['KCET 2024 Engineering', category, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveKcetContext(query, 6));
       }
     } else if (exam === 'MHTCET') {
       contextLabel = 'MHT-CET Engineering official cutoff data — eligible colleges only';
@@ -454,7 +461,9 @@ export async function POST(req) {
         const parts = ['MHT-CET 2024 Engineering', category, `CET merit number ${rank}`, 'eligible colleges closing rank', ...prefParts];
         ({ contextBlock } = await retrieveMhtcetContext(parts.join(' '), 40, { rankField: code, rank: retrievalMinRank }));
       } else if (!hasRank) {
-        ({ contextBlock } = await retrieveMhtcetContext(message, 6));
+        const parts = ['MHT-CET 2024 Engineering', category, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveMhtcetContext(query, 6));
       }
     } else {
       // Default: TGEAPCET (Telangana) — also covers exam === null / 'TGEAPCET'.
@@ -464,7 +473,9 @@ export async function POST(req) {
         const parts = ['TGEAPCET 2025', category, gender, `rank ${rank}`, 'eligible colleges last rank cutoff', ...prefParts];
         ({ contextBlock } = await retrieveContext(parts.join(' '), 40, whereFilter));
       } else if (!hasRank) {
-        ({ contextBlock } = await retrieveContext(message, 6));
+        const parts = ['TGEAPCET 2025', category, gender, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveContext(query, 6));
       }
     }
     // Rank known but category/gender missing → no retrieval; model asks questions
