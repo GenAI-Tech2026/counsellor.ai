@@ -1,8 +1,23 @@
+import path from 'path';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Keep these native/heavy packages out of the bundler so they load as plain
-  // Node modules at runtime (onnxruntime-node inside transformers.js, etc.).
-  serverExternalPackages: ['@supabase/supabase-js', '@xenova/transformers'],
+  // Keep supabase out of the bundler.
+  serverExternalPackages: ['@supabase/supabase-js'],
+
+  // Ignore native node modules when bundling @xenova/transformers for Vercel
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "onnxruntime-node": path.resolve("./lib/empty.js"),
+    };
+    return config;
+  },
+  turbopack: {
+    resolveAlias: {
+      "onnxruntime-node": "./lib/empty.js",
+    },
+  },
 
   // Allow the dev server (and its HMR websocket at /_next/webpack-hmr) to be
   // reached through the ngrok tunnel. Next blocks cross-origin requests to
