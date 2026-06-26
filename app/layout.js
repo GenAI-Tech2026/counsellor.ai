@@ -12,7 +12,7 @@ const dmSans = DM_Sans({
 export const metadata = {
   title: "counsa.ai — AI Admission Counsellor",
   description:
-    "Calm, personalized guidance for TGEAPCET & JEE college admissions, powered by AI.",
+    "Counsa instantly analyzes your rank, category, and state to recommend the perfect colleges—combining 15 years of expert counselling with an IITian's judgment.",
   icons: {
     icon: [
       { url: '/branding/favicon-32x32.png', sizes: '32x32', type: 'image/png' },

@@ -20,7 +20,7 @@ const SOURCE_RE = /\[Source:\s*([^\]]+)\]/g;
 
 const GREETING = {
   role: 'model',
-  text: "Hello! I'm **counsa.ai**, your AI admission counsellor.\n\nI can help you find colleges using **TGEAPCET**, **AP EAPCET**, **JEE Main & Advanced**, **KCET**, and **MHT-CET** data. Just tell me your exam and rank, and I'll guide you through the rest! 🎓",
+  text: "**I'll show you the colleges you can actually get into.**\n\nCounsa instantly analyzes your rank, category, and state to recommend the perfect colleges—combining 15 years of expert counselling with an IITian's judgment.",
   sources: [],
   greeting: true,
 };
