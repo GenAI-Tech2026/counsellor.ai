@@ -4,33 +4,19 @@
    a dark palette — every child rule reads var(--ink)/var(--surface)/… so they
    all flip to dark automatically without per-rule overrides. */
 .sidebar {
-  --canvas:       #121217;
-  --canvas-2:     #17171e;
-  --surface:      #20202a;
-  --surface-2:    #262631;
-  --line:         rgba(255, 255, 255, 0.07);
-  --line-strong:  rgba(255, 255, 255, 0.13);
-  --ink:          #ededf2;
-  --ink-soft:     #c3c4cf;
-  --ink-muted:    #8a8b98;
-  --ink-faint:    #64646f;
-  --accent:       #ff7a36;
-  --accent-hover: #ff8d52;
-  --accent-press: #ef6a22;
-  --accent-soft:  rgba(255, 122, 54, 0.15);
-  --accent-line:  rgba(255, 122, 54, 0.32);
-  --accent-ring:  rgba(255, 122, 54, 0.32);
-  --danger-soft:  rgba(248, 113, 113, 0.16);
-  --shadow-xs:    0 1px 2px rgba(0, 0, 0, 0.3);
+/* Removed hardcoded dark theme variables so sidebar text inherits global light/dark mode colors for contrast against the transparent background. */
 
   display: flex;
   flex-direction: column;
   width: 288px;
   flex-shrink: 0;
-  height: 100vh;
-  height: 100dvh;
-  background: var(--canvas-2);
-  border-right: 1px solid var(--line);
+  height: calc(100vh - 2rem);
+  margin: 1rem;
+  border-radius: 24px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--line);
   overflow: hidden;
   color: var(--ink);
 }
@@ -63,10 +49,10 @@
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  background: var(--accent);
+  background: transparent;
   color: #fff;
   flex-shrink: 0;
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
 }
 .brandName {
   font-size: 0.95rem;

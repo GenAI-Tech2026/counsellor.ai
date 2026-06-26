@@ -82,7 +82,7 @@ JSON schema (null for anything not mentioned):
   "category": <category code or null — see per-exam rules>,
   "gender": <"boys"|"girls" | null>,
   "branch_preference": <plain English or null>,
-  "location_preference": <city/district or null>
+  "location_preference": <city/district/institute name or null>
 }
 
 Exam mapping:
@@ -123,7 +123,8 @@ Category mapping when exam is MHTCET (Maharashtra categories):
 
 Other:
 - "girl / female / she / woman" → "girls"; "boy / male / he / man" → "boys"
-- "five hundred" → 500; "1000" → 1000`;
+- "five hundred" → 500; "1000" → 1000
+- Expand branch abbreviations: "CSE" → "Computer Science", "ECE" → "Electronics and Communication", "EEE" → "Electrical and Electronics", "ME" or "Mech" → "Mechanical Engineering", "IT" → "Information Technology".`;
 
   try {
     const result = await model.generateContent(prompt);
@@ -350,7 +351,29 @@ export async function POST(req) {
   for (const [k, v] of Object.entries(params || {})) {
     if (v != null) resolved[k] = v;
   }
-  if (typeof resolved.category === 'string') resolved.category = resolved.category.toUpperCase();
+  
+  // Normalize exam if the LLM output a raw string instead of the enum
+  if (typeof resolved.exam === 'string' && !VALID_EXAMS.has(resolved.exam)) {
+    const e = resolved.exam.toLowerCase();
+    if (e.includes('jee') || e.includes('josaa') || e.includes('nit') || e.includes('mains')) {
+      resolved.exam = e.includes('advanced') ? 'JEE Advanced' : 'JEE';
+    } else if (e.includes('ap eamcet') || e.includes('apeamcet')) {
+      resolved.exam = 'APEAMCET';
+    } else if (e.includes('kcet') || e.includes('kea')) {
+      resolved.exam = 'KCET';
+    } else if (e.includes('mht')) {
+      resolved.exam = 'MHTCET';
+    } else {
+      resolved.exam = 'TGEAPCET';
+    }
+  }
+
+  if (typeof resolved.category === 'string') {
+    resolved.category = resolved.category.toUpperCase();
+    if ((resolved.exam === 'JEE' || resolved.exam === 'JEE Advanced') && JEE_SEAT_TYPE[resolved.category]) {
+      resolved.category = JEE_SEAT_TYPE[resolved.category];
+    }
+  }
   if (typeof resolved.gender === 'string') resolved.gender = resolved.gender.toLowerCase();
 
   const { rank, exam, category, gender, branch_preference, location_preference } = resolved;
@@ -404,7 +427,9 @@ export async function POST(req) {
         const parts = [label, category, gender, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         ({ contextBlock } = await retrieve(parts.join(' '), 40, { rank: retrievalMinRank, seatType, gender: genderVal }));
       } else if (!hasRank) {
-        ({ contextBlock } = await retrieve(message, 6));
+        const parts = [label, category, gender, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieve(query, 6));
       }
     } else if (exam === 'APEAMCET') {
       contextLabel = 'APEAMCET (AP EAPCET) official last-rank data — eligible colleges only';
@@ -414,7 +439,9 @@ export async function POST(req) {
         const parts = ['APEAMCET 2022', category, gender, `rank ${rank}`, 'eligible colleges last rank', ...prefParts];
         ({ contextBlock } = await retrieveApeamcetContext(parts.join(' '), 40, whereFilter));
       } else if (!hasRank) {
-        ({ contextBlock } = await retrieveApeamcetContext(message, 6));
+        const parts = ['APEAMCET 2022', category, gender, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveApeamcetContext(query, 6));
       }
     } else if (exam === 'KCET') {
       contextLabel = 'KCET Engineering official cutoff data — eligible colleges only';
@@ -423,7 +450,9 @@ export async function POST(req) {
         const parts = ['KCET 2024 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         ({ contextBlock } = await retrieveKcetContext(parts.join(' '), 40, { rankField: code, rank: retrievalMinRank }));
       } else if (!hasRank) {
-        ({ contextBlock } = await retrieveKcetContext(message, 6));
+        const parts = ['KCET 2024 Engineering', category, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveKcetContext(query, 6));
       }
     } else if (exam === 'MHTCET') {
       contextLabel = 'MHT-CET Engineering official cutoff data — eligible colleges only';
@@ -432,7 +461,9 @@ export async function POST(req) {
         const parts = ['MHT-CET 2024 Engineering', category, `CET merit number ${rank}`, 'eligible colleges closing rank', ...prefParts];
         ({ contextBlock } = await retrieveMhtcetContext(parts.join(' '), 40, { rankField: code, rank: retrievalMinRank }));
       } else if (!hasRank) {
-        ({ contextBlock } = await retrieveMhtcetContext(message, 6));
+        const parts = ['MHT-CET 2024 Engineering', category, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveMhtcetContext(query, 6));
       }
     } else {
       // Default: TGEAPCET (Telangana) — also covers exam === null / 'TGEAPCET'.
@@ -442,7 +473,9 @@ export async function POST(req) {
         const parts = ['TGEAPCET 2025', category, gender, `rank ${rank}`, 'eligible colleges last rank cutoff', ...prefParts];
         ({ contextBlock } = await retrieveContext(parts.join(' '), 40, whereFilter));
       } else if (!hasRank) {
-        ({ contextBlock } = await retrieveContext(message, 6));
+        const parts = ['TGEAPCET 2025', category, gender, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveContext(query, 6));
       }
     }
     // Rank known but category/gender missing → no retrieval; model asks questions
@@ -486,8 +519,14 @@ export async function POST(req) {
   const useDeterministic = !!contextBlock && hasAllRequired;
   try {
     if (useDeterministic) {
+      const isJee = exam === 'JEE' || exam === 'JEE Advanced';
       const genderLabel = genderMatters ? (gender === 'girls' ? 'Girls' : 'Boys') : '';
       const catLabel = [category, genderLabel].filter(Boolean).join(' ');
+      
+      const closingRule = isJee
+        ? `- "closing" MUST be the "Closing rank" listed in the row.`
+        : `- "closing" MUST be the rank listed for the student's exact category "${catLabel}". If that category has no rank for a row, skip the row.`;
+
       const extractModel = genAI.getGenerativeModel({
         model: 'gemini-3.1-flash-lite',
         generationConfig: { responseMimeType: 'application/json', temperature: 0, maxOutputTokens: 8192 },
@@ -499,9 +538,9 @@ RETRIEVED CONTEXT (${contextLabel}):
 ${contextBlock}
 """
 
-For EACH row, output: { "college": "<institute name>", "branch": "<program/branch>", "closing": <the closing/last rank for "${catLabel}" as an integer>, "phase": "<phase/round>" }
+For EACH row, output: { "college": "<institute name>", "branch": "<program/branch>", "closing": <the closing rank as an integer>, "phase": "<phase/round>" }
 Rules:
-- "closing" MUST be the rank listed for the student's exact category "${catLabel}". If that category has no rank for a row, skip the row.
+${closingRule}
 - Copy numbers EXACTLY from the context (digits only, no commas). Never invent. Output [] if none.`;
 
       let rows = [];

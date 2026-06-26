@@ -10,12 +10,12 @@
   color-scheme: light;
 
   /* ── Canvas & surfaces ── */
-  --canvas:       #f4f4f6;   /* soft neutral page */
-  --canvas-2:     #ececef;   /* deeper neutral for insets / rails */
+  --canvas:       #f8f9fa;   /* ultra clean light canvas */
+  --canvas-2:     #f1f3f5;   
   --surface:      #ffffff;
-  --surface-2:    #f8f8fa;
-  --line:         #e7e7ec;   /* hairline borders */
-  --line-strong:  #d9d9e0;
+  --surface-2:    #f8f9fa;
+  --line:         rgba(0, 0, 0, 0.06);
+  --line-strong:  rgba(0, 0, 0, 0.12);
 
   /* ── Ink (text) ── */
   --ink:        #16161d;     /* primary text */
@@ -23,14 +23,14 @@
   --ink-muted:  #5c5c68;     /* tertiary / labels — AA on canvas (6.0:1) & surface (6.6:1) */
   --ink-faint:  #7e7e89;     /* placeholders / hints — legible disclaimers (3.65:1 on canvas) */
 
-  /* ── Accent: warm amber-orange ── */
-  --accent:       #ee5d1c;
-  --accent-hover: #d44f12;
-  --accent-press: #b8430d;
-  --accent-soft:  #fdeadf;   /* tinted fills */
-  --accent-line:  #f6cdb4;   /* tinted borders */
-  --accent-ring:  rgba(238, 93, 28, 0.22);
-  --accent-on:    #ffffff;   /* text/icon on a filled accent */
+  /* ── Accent: Premium burnt orange/amber ── */
+  --accent:       #f35b04;
+  --accent-hover: #db5000;
+  --accent-press: #bc4400;
+  --accent-soft:  rgba(243, 91, 4, 0.08);
+  --accent-line:  rgba(243, 91, 4, 0.2);
+  --accent-ring:  rgba(243, 91, 4, 0.25);
+  --accent-on:    #ffffff;
 
   /* ── Semantic ── */
   --success:      #0e9f6e;
@@ -43,11 +43,11 @@
   --scroll-thumb: rgba(22, 22, 29, 0.16);
   --scroll-thumb-hover: rgba(22, 22, 29, 0.30);
 
-  /* ── Elevation ── */
-  --shadow-xs: 0 1px 2px rgba(22, 22, 29, 0.05);
-  --shadow-sm: 0 1px 2px rgba(22, 22, 29, 0.04), 0 4px 12px rgba(22, 22, 29, 0.05);
-  --shadow-md: 0 4px 14px rgba(22, 22, 29, 0.06), 0 14px 34px rgba(22, 22, 29, 0.08);
-  --shadow-lg: 0 12px 28px rgba(22, 22, 29, 0.10), 0 34px 64px rgba(22, 22, 29, 0.12);
+  /* ── Elevation (Premium, layered, soft) ── */
+  --shadow-xs: 0 1px 2px rgba(17, 17, 26, 0.04);
+  --shadow-sm: 0 1px 3px rgba(17, 17, 26, 0.04), 0 4px 14px rgba(17, 17, 26, 0.03);
+  --shadow-md: 0 4px 16px rgba(17, 17, 26, 0.04), 0 16px 40px rgba(17, 17, 26, 0.04);
+  --shadow-lg: 0 12px 32px rgba(17, 17, 26, 0.04), 0 40px 80px rgba(17, 17, 26, 0.06);
 
   /* ── Radii ── */
   --r-sm: 8px;
@@ -57,8 +57,8 @@
   --r-pill: 999px;
 
   /* ── Type ── */
-  --font-serif: var(--font-fraunces), 'Fraunces', Georgia, 'Times New Roman', serif;
-  --font-sans:  var(--font-jakarta), 'Plus Jakarta Sans', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --font-serif: var(--font-dm-sans), 'DM Sans', system-ui, sans-serif;
+  --font-sans:  var(--font-dm-sans), 'DM Sans', system-ui, sans-serif;
 
   /* ── Legacy aliases (kept so older references don't break) ── */
   --background: var(--canvas);
@@ -67,7 +67,7 @@
   --primary-hover: var(--accent-hover);
   --secondary: var(--surface-2);
   --secondary-hover: var(--canvas-2);
-  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-bg: rgba(255, 255, 255, 0.65);
   --glass-border: var(--line);
   --error: var(--danger);
 }
@@ -78,25 +78,25 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --canvas:       #0f0f14;
-  --canvas-2:     #16161d;
+  --canvas:       #0d0d12;
+  --canvas-2:     #14141a;
   --surface:      #1a1a22;
   --surface-2:    #21212b;
-  --line:         rgba(255, 255, 255, 0.08);
-  --line-strong:  rgba(255, 255, 255, 0.15);
+  --line:         rgba(255, 255, 255, 0.06);
+  --line-strong:  rgba(255, 255, 255, 0.12);
 
   --ink:        #ecedf2;
   --ink-soft:   #c2c3cf;
   --ink-muted:  #8b8c9a;
   --ink-faint:  #61626e;
 
-  --accent:       #ff7a36;   /* brightened so it pops on charcoal */
-  --accent-hover: #ff8d52;
-  --accent-press: #f06a22;
-  --accent-soft:  rgba(255, 122, 54, 0.15);
-  --accent-line:  rgba(255, 122, 54, 0.32);
-  --accent-ring:  rgba(255, 122, 54, 0.30);
-  --accent-on:    #1a1208;
+  --accent:       #f35b04;
+  --accent-hover: #ff7424;
+  --accent-press: #db5000;
+  --accent-soft:  rgba(243, 91, 4, 0.12);
+  --accent-line:  rgba(243, 91, 4, 0.25);
+  --accent-ring:  rgba(243, 91, 4, 0.30);
+  --accent-on:    #ffffff;
 
   --success-soft: rgba(14, 159, 110, 0.16);
   --danger:       #f87171;
@@ -111,7 +111,7 @@
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.38), 0 14px 34px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.45), 0 34px 64px rgba(0, 0, 0, 0.55);
 
-  --glass-bg: rgba(26, 26, 34, 0.7);
+  --glass-bg: rgba(26, 26, 34, 0.4);
 }
 
 html { height: 100%; }
@@ -133,17 +133,23 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* A barely-there amber wash so the surface isn't dead flat. */
-  background-image:
-    radial-gradient(60rem 42rem at 10% -10%, rgba(238, 93, 28, 0.06), transparent 60%),
-    radial-gradient(46rem 34rem at 108% 4%, rgba(238, 93, 28, 0.035), transparent 55%);
+  background-color: var(--canvas);
+  background-image: 
+    radial-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at 50% -20%, rgba(243, 91, 4, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 0% 20%, rgba(255, 122, 54, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 100% 40%, rgba(255, 160, 60, 0.05) 0%, transparent 40%);
+  background-size: 24px 24px, 100% 100%, 100% 100%, 100% 100%;
+  background-position: center top, center, center, center;
   background-attachment: fixed;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 [data-theme="dark"] body {
-  background-image:
-    radial-gradient(58rem 40rem at 8% -12%, rgba(255, 122, 54, 0.10), transparent 58%),
-    radial-gradient(44rem 32rem at 110% 2%, rgba(255, 122, 54, 0.05), transparent 55%);
+  background-image: 
+    radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at 50% -20%, rgba(243, 91, 4, 0.12) 0%, transparent 50%),
+    radial-gradient(circle at 0% 20%, rgba(255, 122, 54, 0.06) 0%, transparent 40%),
+    radial-gradient(circle at 100% 40%, rgba(255, 160, 60, 0.04) 0%, transparent 40%);
 }
 
 * {

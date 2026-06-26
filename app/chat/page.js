@@ -1,16 +1,19 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import styles from './chat.module.css';
 import {
-  ArrowUp, User, Bot, Loader2, BookOpen, ThumbsUp, ThumbsDown, Copy, Check,
+  ArrowUp, User, Loader2, BookOpen, ThumbsUp, ThumbsDown, Copy, Check,
   Download, Menu, GraduationCap, GitCompare, Compass, Square, ArrowDown, X,
-  Trophy, ArrowRight,
+  Trophy, ArrowRight, Plus, SlidersHorizontal, Paperclip
 } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import Sidebar from './Sidebar';
+import LeadCaptureModal from '@/components/LeadCaptureModal';
 import { createClient } from '@/lib/supabase/client';
 
 const SOURCE_RE = /\[Source:\s*([^\]]+)\]/g;
@@ -20,6 +23,21 @@ const GREETING = {
   text: "Hello! I'm **counsa.ai**, your AI admission counsellor.\n\nI can help you find colleges using **TGEAPCET**, **AP EAPCET**, **JEE Main & Advanced**, **KCET**, and **MHT-CET** data. Just tell me your exam and rank, and I'll guide you through the rest! 🎓",
   sources: [],
   greeting: true,
+};
+
+const staggerContainer = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.15
+    }
+  }
+};
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 24, scale: 0.98 },
+  show: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 300, damping: 24 } }
 };
 
 // Hero "jump-start" cards shown on an empty chat. Each fills the composer with a
@@ -253,7 +271,12 @@ function looksLikeRecommendation(text) {
 // already filled but the bot is asking to confirm/correct it (e.g. "confirm
 // your exact rank"). Order = priority when several are mentioned.
 function botAskedKey(text) {
-  if (!text || !/[?]/.test(text)) return null;
+  if (!text) return null;
+  
+  // A bot reply might be a request without a question mark (e.g. "Please tell me your category.")
+  const isAsking = /[?]|please\s+(provide|tell|specify|let\s+me\s+know|confirm)|i\s+(need|would\s+like)\s+to\s+(know|confirm|verify)/i.test(text);
+  if (!isAsking) return null;
+
   const t = text.toLowerCase();
   // Branch first, but only with intent phrasing (so the table header
   // "Program/Branch" never triggers it). Then the more specific fields, and
@@ -596,6 +619,14 @@ export default function ChatPage() {
     setFeedback({});
     setCopiedIndex(null);
     setConvLoading(false);
+    
+    // Clear the active profile when switching conversations to prevent state leakage
+    setProfile(null);
+    prevExamRef.current = undefined;
+    setSkipped({});
+    setRankDraft('');
+    setPopupDismissedAt(-1);
+
     try {
       const res = await fetch(`/api/conversations/${id}`);
       const data = await res.json();
@@ -675,11 +706,6 @@ export default function ChatPage() {
     const convId = await ensureConversation();
     if (convId) persistMessage(convId, 'user', text, []);
 
-    // Quietly append the saved profile so the AI always knows the student's
-    // details, without changing what's shown or stored as their message.
-    const profileContext = buildProfileContext(profile);
-    const apiMessage = profileContext ? `${text}\n\n${profileContext}` : text;
-
     // SHARED CONTRACT: send last turn's resolved profile as `priorParams`
     // (null on the first turn). Cleared chips (#3) are null in `profile`, so
     // they're naturally dropped here. Shape matches the contract exactly.
@@ -703,7 +729,7 @@ export default function ChatPage() {
       res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: apiMessage, history, priorParams }),
+        body: JSON.stringify({ message: text, history, priorParams }),
         signal: controller.signal,
       });
     } catch (err) {
@@ -1042,32 +1068,41 @@ export default function ChatPage() {
         value={input}
         onChange={handleComposerChange}
         onKeyDown={handleComposerKeyDown}
-        placeholder="Ask anything — your exam, rank and category…"
+        placeholder="Ask Me Anything..."
         className={styles.composerInput}
-        rows={1}
+        rows={3}
         disabled={busy}
         autoFocus
       />
-      {isStreaming ? (
-        <button
-          type="button"
-          className={`${styles.sendButton} ${styles.stopButton}`}
-          onClick={handleStop}
-          aria-label="Stop generating"
-          title="Stop generating"
-        >
-          <Square size={15} fill="currentColor" />
-        </button>
-      ) : (
-        <button
-          type="submit"
-          className={styles.sendButton}
-          disabled={!input.trim() || busy}
-          aria-label="Send message"
-        >
-          <ArrowUp size={18} />
-        </button>
-      )}
+      <div className={styles.composerActions}>
+        <div className={styles.composerLeftActions}>
+          <button type="button" className={styles.composerActionBtn} aria-label="Add"><Plus size={16} /></button>
+          <button type="button" className={styles.composerActionBtn} aria-label="Settings"><SlidersHorizontal size={16} /></button>
+        </div>
+        <div className={styles.composerRightActions}>
+          <button type="button" className={styles.composerActionBtn} aria-label="Attach"><Paperclip size={16} /></button>
+          {isStreaming ? (
+            <button
+              type="button"
+              className={`${styles.sendButton} ${styles.stopButton}`}
+              onClick={handleStop}
+              aria-label="Stop generating"
+              title="Stop generating"
+            >
+              <Square size={15} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className={styles.sendButton}
+              disabled={!input.trim() || busy}
+              aria-label="Send message"
+            >
+              <ArrowUp size={18} />
+            </button>
+          )}
+        </div>
+      </div>
     </form>
   );
 
@@ -1092,12 +1127,15 @@ export default function ChatPage() {
   // by branch ("…by a specific location or branch preference?"), and a branch
   // quick-reply there IS helpful.
   const botPresentingResults = looksLikeRecommendation(lastBotText);
-  const askedKey = /[?]/.test(lastBotText) ? botAskedKey(lastBotText) : null;
+  // botAskedKey now internally checks for question marks OR polite request keywords (e.g. "I need to know").
+  const askedKey = botAskedKey(lastBotText);
   const askedQuestion = askedKey
     ? QUESTIONS.find((q) => q.key === askedKey && (!q.showIf || q.showIf(profile)))
     : null;
 
   let popupQuestion = null;
+  const isAskingAnything = askedKey != null || /[?]|please\s+(provide|tell|specify|let\s+me\s+know|confirm)|i\s+(need|would\s+like)\s+to\s+(know|confirm|verify)/i.test(lastBotText);
+  
   if (botPresentingResults) {
     // After results the bot often invites refining by branch. Offer that
     // quick-reply only ONCE — until the student picks a branch or skips it — so
@@ -1107,7 +1145,7 @@ export default function ChatPage() {
       && !skipped.branch_preference) {
       popupQuestion = askedQuestion;
     }
-  } else if (/[?]/.test(lastBotText)) {
+  } else if (isAskingAnything) {
     // Prefer the first still-MISSING detail (handles "which exam is this rank
     // from?" — exam is missing though the sentence says "rank"); else the
     // explicitly-asked field (confirmation / branch).
@@ -1239,19 +1277,33 @@ export default function ChatPage() {
 
   return (
     <div className={styles.shell}>
-      <Sidebar
-        conversations={conversations}
-        activeId={activeId}
-        onSelect={selectConversation}
-        onNew={startNewChat}
-        onDelete={deleteConversation}
-        user={user}
-        loading={convLoading}
-        collapsed={collapsed}
-        onToggle={() => setCollapsed(c => !c)}
-        mobileOpen={mobileNavOpen}
-        onCloseMobile={() => setMobileNavOpen(false)}
-      />
+      <LeadCaptureModal user={user} />
+      <AnimatePresence mode="popLayout">
+        {hasUserMessages && (
+          <motion.div
+            key="sidebar"
+            initial={{ opacity: 0, x: -50, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -50, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            style={{ zIndex: 100 }}
+          >
+            <Sidebar
+              conversations={conversations}
+              activeId={activeId}
+              onSelect={selectConversation}
+              onNew={startNewChat}
+              onDelete={deleteConversation}
+              user={user}
+              loading={convLoading}
+              collapsed={collapsed}
+              onToggle={() => setCollapsed(c => !c)}
+              mobileOpen={mobileNavOpen}
+              onCloseMobile={() => setMobileNavOpen(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
       {mobileNavOpen && (
         <div
           className={styles.mobileBackdrop}
@@ -1307,7 +1359,7 @@ export default function ChatPage() {
                   className={`${styles.messageWrapper} ${isUser ? styles.messageUser : styles.messageBot}`}
                 >
                   <div className={styles.avatar}>
-                    {isUser ? <User size={16} /> : <Bot size={16} />}
+                    {isUser ? <User size={16} /> : <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={16} height={16} unoptimized />}
                   </div>
                   <div className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleBot}`}>
                     {isUser ? (
@@ -1378,7 +1430,7 @@ export default function ChatPage() {
             {isLoading && (
               <div className={`${styles.messageWrapper} ${styles.messageBot}`}>
                 <div className={styles.avatar}>
-                  <Bot size={16} />
+                  <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={16} height={16} unoptimized />
                 </div>
                 <div className={`${styles.bubble} ${styles.bubbleBot} ${styles.thinkingBubble}`}>
                   <Loader2 size={16} className={styles.spinner} />
@@ -1416,44 +1468,93 @@ export default function ChatPage() {
         </>
         ) : (
         /* ── Hero / empty state ── */
-        <main className={styles.hero}>
+        <motion.main 
+          className={styles.hero}
+          variants={staggerContainer}
+          initial="hidden"
+          animate="show"
+        >
           <div className={styles.heroInner}>
-            <span className={styles.heroMark} aria-hidden="true">
-              <Bot size={30} />
-            </span>
-            <h1 className={styles.heroTitle}>What can I help you with today?</h1>
-            <p className={styles.heroSub}>
-              Tell me your exam and rank — I&apos;ll map out the colleges within reach.
-            </p>
+            <motion.div variants={fadeUp} className={styles.heroEyebrow}>
+              <span className={styles.heroMark} aria-hidden="true">
+                <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={24} height={24} unoptimized />
+              </span>
+              India&apos;s first AI engineering counsellor
+            </motion.div>
+            
+            <motion.h1 variants={fadeUp} className={styles.heroTitle}>
+              I'll show you the colleges you can <span className={styles.titleHighlight}>actually get into.</span>
+            </motion.h1>
+            
+            <motion.p variants={fadeUp} className={styles.heroDesc}>
+              Counsa instantly analyzes your rank, category, and state to recommend the perfect colleges—combining 15 years of expert counselling with an IITian's judgment.
+            </motion.p>
 
-            <div className={styles.heroComposer}>
+            <motion.div variants={fadeUp} className={styles.heroComposer}>
               {composer}
               {rateHint}
-            </div>
-
-            <div className={styles.suggestions}>
-              {SUGGESTIONS.map(({ icon: Icon, title, desc, prompt }) => (
-                <button
-                  key={title}
-                  type="button"
-                  className={styles.suggestionCard}
-                  onClick={() => fillPrompt(prompt)}
-                  disabled={isLoading || isStreaming}
+              
+              <div className={styles.suggestionPills}>
+                <motion.button 
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={styles.suggestionPill}
+                  onClick={() => setInput("What's the cutoff for CSE at JNTU Kakinada via AP EAMCET?")}
                 >
-                  <span className={styles.suggestionIcon}>
-                    <Icon size={18} />
-                  </span>
-                  <span className={styles.suggestionTitle}>{title}</span>
-                  <span className={styles.suggestionDesc}>{desc}</span>
-                </button>
-              ))}
-            </div>
+                  Cutoff for CSE via AP EAMCET
+                </motion.button>
+                <motion.button 
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={styles.suggestionPill}
+                  onClick={() => setInput("Can I get into IIT Bombay with rank 1200?")}
+                >
+                  Can I get into IIT Bombay?
+                </motion.button>
+                <motion.button 
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={styles.suggestionPill}
+                  onClick={() => setInput("Top CSE colleges via TG EAMCET")}
+                >
+                  Top CSE colleges via TG EAMCET
+                </motion.button>
+              </div>
+            </motion.div>
 
-            <p className={styles.disclaimer}>
+            <motion.div variants={fadeUp} className={styles.socialProof}>
+              <div className={styles.statsBadge}>
+                <div className={styles.statsText}>
+                  <span className={styles.statsLabel}>Already guiding</span>
+                  <span className={styles.statsValue}>1,000+ students</span>
+                </div>
+              </div>
+              
+              <ul className={styles.featuresList}>
+                <li>
+                  <span className={styles.checkIcon}><Trophy size={20} strokeWidth={2.5} /></span>
+                  15+ years of counselling experience
+                </li>
+                <li>
+                  <span className={styles.checkIcon}><GraduationCap size={20} strokeWidth={2.5} /></span>
+                  An IITian&apos;s touch on every recommendation
+                </li>
+                <li>
+                  <span className={styles.checkIcon}><GitCompare size={20} strokeWidth={2.5} /></span>
+                  Trained on 6 years of JoSAA & State data
+                </li>
+                <li>
+                  <span className={styles.checkIcon}><Compass size={20} strokeWidth={2.5} /></span>
+                  Smart insights across 2000+ colleges
+                </li>
+              </ul>
+            </motion.div>
+
+            <motion.p variants={fadeUp} className={styles.disclaimer}>
               Data from official TGEAPCET, AP EAPCET, JEE Main & Advanced, KCET & MHT-CET cutoffs. For reference only.
-            </p>
+            </motion.p>
           </div>
-        </main>
+        </motion.main>
         )}
 
         {/* Transient sign-in nudge */}
