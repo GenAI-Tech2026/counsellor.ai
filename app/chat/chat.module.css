@@ -4,7 +4,7 @@
   height: 100vh;
   height: 100dvh; /* track the visible viewport on mobile (address bar / keyboard) */
   overflow: hidden;
-  background: var(--canvas);
+  background: transparent;
 }
 
 .container {
@@ -15,7 +15,7 @@
   height: 100vh;
   height: 100dvh;
   position: relative;
-  background: var(--canvas);
+  background: transparent;
 }
 
 /* ── Header ── */
@@ -27,10 +27,10 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  background: var(--header-bg);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--line);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: none;
 }
 
 .backButton {
@@ -995,52 +995,88 @@
 }
 .scrollToBottom:active { transform: translateX(-50%) scale(0.92); }
 
-/* ── Composer: an auto-growing input with an inline send button ── */
+/* ── Composer: large immersive glassmorphic textarea ── */
 .composer {
   width: 100%;
   max-width: 880px;
   display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 0.5rem;
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-xl);
-  padding: 0.5rem 0.5rem 0.5rem 1rem;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  flex-direction: column;
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  padding: 1.25rem;
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.05),
+    0 12px 48px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
   transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
 }
 .composer:focus-within {
   border-color: var(--accent-line);
-  box-shadow: 0 8px 30px var(--accent-soft), 0 0 0 4px var(--accent-ring);
-  transform: translateY(-1px);
-}
-.composer:has(.composerInput:focus-visible) {
-  border-color: var(--accent-line);
-  box-shadow: 0 8px 30px var(--accent-soft), 0 0 0 4px var(--accent-ring);
-  transform: translateY(-1px);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    0 24px 64px rgba(0, 0, 0, 0.12),
+    0 0 0 4px var(--accent-ring),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transform: translateY(-2px);
 }
 
 .composerInput {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
   resize: none;
   border: none;
   outline: none;
   background: transparent;
   color: var(--ink);
   font-family: inherit;
-  font-size: 1rem;
-  line-height: 1.5;
-  max-height: 200px;
+  font-size: 1.15rem;
+  line-height: 1.6;
+  min-height: 80px;
+  max-height: 300px;
   overflow-y: auto;
-  /* Vertical padding chosen so a single-line field matches the 42px button
-     height, keeping the input text and the button optically aligned. */
-  padding: 0.5rem 0.2rem;
+  padding: 0 0.5rem;
 }
-.composerInput::placeholder { color: var(--ink-faint); font-weight: 400; }
+.composerInput::placeholder { color: var(--ink-soft); font-weight: 500; }
 .composerInput:focus-visible { box-shadow: none; }
 .composerInput:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.composerActions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.composerLeftActions,
+.composerRightActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.composerActionBtn {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+.composerActionBtn:hover {
+  background: var(--surface-2);
+}
+.composerActionBtn:active {
+  transform: scale(0.92);
+}
 
 .sendButton {
   background: var(--accent);
@@ -1061,8 +1097,9 @@
   background: var(--accent-hover);
 }
 .sendButton:disabled {
-  background: var(--canvas-2);
-  color: var(--ink-faint);
+  background: var(--accent-soft);
+  color: var(--accent);
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -1127,23 +1164,34 @@
 .heroTitle {
   font-family: var(--font-serif);
   font-size: clamp(2rem, 5vw, 3.2rem);
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: -0.03em;
   line-height: 1.15;
   color: var(--ink);
   margin-bottom: 1.25rem;
+  text-shadow: 0 4px 24px rgba(0,0,0,0.05);
 }
 
 .titleHighlight {
-  color: var(--ink-muted);
+  color: var(--accent);
 }
 
 .heroDesc {
   font-size: 1.1rem;
   line-height: 1.6;
-  color: var(--ink-soft);
+  color: var(--ink);
+  font-weight: 500;
   max-width: 44rem;
   margin: 0 auto;
+}
+
+.heroComposer {
+  width: 100%;
+  margin-top: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 /* ── Social Proof ── */
@@ -1163,11 +1211,13 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  background: var(--surface);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--line);
-  padding: 0.6rem 1.2rem;
+  padding: 0.5rem 1.25rem;
   border-radius: var(--r-pill);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .statsText {
@@ -1180,14 +1230,14 @@
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--ink-muted);
+  color: var(--ink-faint);
   font-weight: 600;
 }
 
 .statsValue {
   font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--ink);
+  font-weight: 600;
+  color: var(--ink-soft);
 }
 
 .featuresList {
@@ -1195,18 +1245,31 @@
   padding: 0;
   margin: 0;
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 1.2rem 2rem;
+  gap: 1rem;
 }
 
 .featuresList li {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
   font-size: 0.95rem;
   color: var(--ink-soft);
   font-weight: 500;
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--line);
+  padding: 1rem 1.25rem;
+  border-radius: var(--r-xl);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.featuresList li:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
 }
 
 .checkIcon {
@@ -1215,19 +1278,37 @@
   justify-content: center;
   color: var(--accent);
   background: var(--accent-soft);
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.heroComposer {
-  width: 100%;
-  margin-top: 1.75rem;
+.suggestionPills {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.6rem;
+  justify-content: center;
+  gap: 0.8rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.suggestionPill {
+  background: rgba(255, 255, 255, 0.95);
+  color: #1a1a24;
+  border: none;
+  padding: 0.6rem 1.25rem;
+  border-radius: var(--r-pill);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.suggestionPill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
 }
 
 /* ── Suggestion cards ── */

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import styles from './chat.module.css';
 import {
   ArrowUp, User, Loader2, BookOpen, ThumbsUp, ThumbsDown, Copy, Check,
   Download, Menu, GraduationCap, GitCompare, Compass, Square, ArrowDown, X,
-  Trophy, ArrowRight,
+  Trophy, ArrowRight, Plus, SlidersHorizontal, Paperclip
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -22,6 +23,21 @@ const GREETING = {
   text: "Hello! I'm **counsa.ai**, your AI admission counsellor.\n\nI can help you find colleges using **TGEAPCET**, **AP EAPCET**, **JEE Main & Advanced**, **KCET**, and **MHT-CET** data. Just tell me your exam and rank, and I'll guide you through the rest! 🎓",
   sources: [],
   greeting: true,
+};
+
+const staggerContainer = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.15
+    }
+  }
+};
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 24, scale: 0.98 },
+  show: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 300, damping: 24 } }
 };
 
 // Hero "jump-start" cards shown on an empty chat. Each fills the composer with a
@@ -1052,32 +1068,41 @@ export default function ChatPage() {
         value={input}
         onChange={handleComposerChange}
         onKeyDown={handleComposerKeyDown}
-        placeholder="Ask anything — your exam, rank and category…"
+        placeholder="Ask Me Anything..."
         className={styles.composerInput}
-        rows={1}
+        rows={3}
         disabled={busy}
         autoFocus
       />
-      {isStreaming ? (
-        <button
-          type="button"
-          className={`${styles.sendButton} ${styles.stopButton}`}
-          onClick={handleStop}
-          aria-label="Stop generating"
-          title="Stop generating"
-        >
-          <Square size={15} fill="currentColor" />
-        </button>
-      ) : (
-        <button
-          type="submit"
-          className={styles.sendButton}
-          disabled={!input.trim() || busy}
-          aria-label="Send message"
-        >
-          <ArrowUp size={18} />
-        </button>
-      )}
+      <div className={styles.composerActions}>
+        <div className={styles.composerLeftActions}>
+          <button type="button" className={styles.composerActionBtn} aria-label="Add"><Plus size={16} /></button>
+          <button type="button" className={styles.composerActionBtn} aria-label="Settings"><SlidersHorizontal size={16} /></button>
+        </div>
+        <div className={styles.composerRightActions}>
+          <button type="button" className={styles.composerActionBtn} aria-label="Attach"><Paperclip size={16} /></button>
+          {isStreaming ? (
+            <button
+              type="button"
+              className={`${styles.sendButton} ${styles.stopButton}`}
+              onClick={handleStop}
+              aria-label="Stop generating"
+              title="Stop generating"
+            >
+              <Square size={15} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className={styles.sendButton}
+              disabled={!input.trim() || busy}
+              aria-label="Send message"
+            >
+              <ArrowUp size={18} />
+            </button>
+          )}
+        </div>
+      </div>
     </form>
   );
 
@@ -1253,19 +1278,32 @@ export default function ChatPage() {
   return (
     <div className={styles.shell}>
       <LeadCaptureModal user={user} />
-      <Sidebar
-        conversations={conversations}
-        activeId={activeId}
-        onSelect={selectConversation}
-        onNew={startNewChat}
-        onDelete={deleteConversation}
-        user={user}
-        loading={convLoading}
-        collapsed={collapsed}
-        onToggle={() => setCollapsed(c => !c)}
-        mobileOpen={mobileNavOpen}
-        onCloseMobile={() => setMobileNavOpen(false)}
-      />
+      <AnimatePresence mode="popLayout">
+        {hasUserMessages && (
+          <motion.div
+            key="sidebar"
+            initial={{ opacity: 0, x: -50, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -50, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            style={{ zIndex: 100 }}
+          >
+            <Sidebar
+              conversations={conversations}
+              activeId={activeId}
+              onSelect={selectConversation}
+              onNew={startNewChat}
+              onDelete={deleteConversation}
+              user={user}
+              loading={convLoading}
+              collapsed={collapsed}
+              onToggle={() => setCollapsed(c => !c)}
+              mobileOpen={mobileNavOpen}
+              onCloseMobile={() => setMobileNavOpen(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
       {mobileNavOpen && (
         <div
           className={styles.mobileBackdrop}
@@ -1430,30 +1468,62 @@ export default function ChatPage() {
         </>
         ) : (
         /* ── Hero / empty state ── */
-        <main className={styles.hero}>
+        <motion.main 
+          className={styles.hero}
+          variants={staggerContainer}
+          initial="hidden"
+          animate="show"
+        >
           <div className={styles.heroInner}>
-            <div className={styles.heroEyebrow}>
+            <motion.div variants={fadeUp} className={styles.heroEyebrow}>
               <span className={styles.heroMark} aria-hidden="true">
-                <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={28} height={28} unoptimized />
+                <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={24} height={24} unoptimized />
               </span>
               India&apos;s first AI engineering counsellor
-            </div>
+            </motion.div>
             
-            <h1 className={styles.heroTitle}>
+            <motion.h1 variants={fadeUp} className={styles.heroTitle}>
               Tell me your rank.<br />
               <span className={styles.titleHighlight}>I&apos;ll show you the colleges it actually gets you.</span>
-            </h1>
+            </motion.h1>
             
-            <p className={styles.heroDesc}>
+            <motion.p variants={fadeUp} className={styles.heroDesc}>
               Counsa reads your JEE rank, category and home state — then recommends the right colleges with the judgment of 15 years of counselling and an IITian&apos;s eye for what&apos;s worth taking.
-            </p>
+            </motion.p>
 
-            <div className={styles.heroComposer}>
+            <motion.div variants={fadeUp} className={styles.heroComposer}>
               {composer}
               {rateHint}
-            </div>
+              
+              <div className={styles.suggestionPills}>
+                <motion.button 
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={styles.suggestionPill}
+                  onClick={() => setInput("What's the cutoff for CSE at NIT Warangal?")}
+                >
+                  Cutoff for CSE at NIT Warangal
+                </motion.button>
+                <motion.button 
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={styles.suggestionPill}
+                  onClick={() => setInput("Can I get into IIT Bombay with rank 1200?")}
+                >
+                  Can I get into IIT Bombay?
+                </motion.button>
+                <motion.button 
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={styles.suggestionPill}
+                  onClick={() => setInput("Compare VIT Vellore and SRM University")}
+                >
+                  Compare VIT & SRM
+                </motion.button>
+              </div>
+            </motion.div>
 
-            <div className={styles.socialProof}>
+            <motion.div variants={fadeUp} className={styles.socialProof}>
               <div className={styles.statsBadge}>
                 <div className={styles.statsText}>
                   <span className={styles.statsLabel}>Already guiding</span>
@@ -1475,13 +1545,13 @@ export default function ChatPage() {
                   Trained on 6 years of JoSAA and Other Exams data
                 </li>
               </ul>
-            </div>
+            </motion.div>
 
-            <p className={styles.disclaimer}>
+            <motion.p variants={fadeUp} className={styles.disclaimer}>
               Data from official TGEAPCET, AP EAPCET, JEE Main & Advanced, KCET & MHT-CET cutoffs. For reference only.
-            </p>
+            </motion.p>
           </div>
-        </main>
+        </motion.main>
         )}
 
         {/* Transient sign-in nudge */}
