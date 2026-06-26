@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import styles from './login.module.css';
 
@@ -31,50 +32,60 @@ export default function LoginPage() {
   };
 
   return (
-    <main className={styles.main}>
-      <div className={`${styles.card} glass`}>
-        <h1 className={styles.title}>counsa.ai</h1>
-        <p className={styles.subtitle}>
-          Sign in to save your chats and pick up where you left off
-        </p>
+    <div className={styles.container}>
+      {/* Decorative blurred blobs for the edges */}
+      <div className={styles.decorLeft} aria-hidden="true" />
+      <div className={styles.decorRight} aria-hidden="true" />
 
-        <button
-          type="button"
-          className={styles.googleButton}
-          onClick={handleGoogleSignIn}
-          disabled={loading}
-        >
-          <span className={styles.googleIcon}>
-            <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
-              <path
-                fill="#4285F4"
-                d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"
-              />
-              <path
-                fill="#34A853"
-                d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.583-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.997 8.997 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
-              />
-              <path
-                fill="#EA4335"
-                d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
-              />
-            </svg>
-          </span>
-          {loading ? 'Redirecting…' : 'Continue with Google'}
-        </button>
+      <main className={styles.main}>
+        <div className={styles.brandLogo}>
+          <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={48} height={48} unoptimized />
+        </div>
+        
+        <h1 className={styles.title}>
+          Get into the <span className={styles.titleHighlight}>best college</span> for your rank.
+        </h1>
+
+        <div className={styles.actionsBox}>
+          <button
+            type="button"
+            className={styles.googleButton}
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+          >
+            <span className={styles.googleIcon}>
+              <svg width="20" height="20" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  fill="#ffffff"
+                  d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"
+                />
+                <path
+                  fill="#ffffff"
+                  d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.583-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
+                />
+                <path
+                  fill="#ffffff"
+                  d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.997 8.997 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
+                />
+                <path
+                  fill="#ffffff"
+                  d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+                />
+              </svg>
+            </span>
+            {loading ? 'Redirecting…' : 'Continue with Google'}
+          </button>
+          
+        </div>
 
         {hasError && (
           <p className={styles.error}>Sign-in failed. Please try again.</p>
         )}
 
-        <Link href="/chat" prefetch={false} className={styles.skipLink}>
-          Continue without signing in
-        </Link>
-      </div>
-    </main>
+        <p className={styles.terms}>
+          By signing in, you agree to our <a href="#">Terms</a> & <a href="#">Privacy</a>
+        </p>
+      </main>
+    </div>
   );
 }

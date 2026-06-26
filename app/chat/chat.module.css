@@ -18,6 +18,18 @@
   background: transparent;
 }
 
+.container::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image: url('/branding/engineering_doodle_bg.png');
+  background-size: 600px;
+  background-repeat: repeat;
+  opacity: 0.05;
+  z-index: 0;
+  pointer-events: none;
+}
+
 /* ── Header ── */
 .header {
   display: flex;
@@ -1179,11 +1191,12 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--accent);
-  background: var(--accent-soft);
+  background: #ffffff;
   padding: 0.4rem 1rem 0.4rem 0.4rem;
   border-radius: var(--r-pill);
   margin-bottom: 1.5rem;
   border: 1px solid var(--accent-line);
+  box-shadow: 0 4px 12px rgba(255, 87, 34, 0.08);
 }
 
 .heroMark {
@@ -1200,12 +1213,13 @@
 
 .heroTitle {
   font-family: var(--font-serif);
-  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-size: clamp(2rem, 5vw, 3rem);
   font-weight: 800;
   letter-spacing: -0.03em;
   line-height: 1.15;
   color: var(--ink);
   margin-bottom: 1.25rem;
+  max-width: 800px;
   text-shadow: 0 4px 24px rgba(0,0,0,0.05);
 }
 
@@ -1224,6 +1238,7 @@
 
 .heroComposer {
   width: 100%;
+  max-width: 760px;
   margin-top: 2.5rem;
   display: flex;
   flex-direction: column;
@@ -1282,7 +1297,7 @@
   padding: 0;
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 1.25rem;
   width: 100%;
   max-width: 800px;
@@ -1480,6 +1495,7 @@
 @media (max-width: 760px) {
   /* Stack the jump-start cards into a single column on small screens. */
   .suggestions { grid-template-columns: 1fr; }
+  .featuresList { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {

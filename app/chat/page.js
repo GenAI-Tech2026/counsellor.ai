@@ -14,6 +14,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import Sidebar from './Sidebar';
 import LeadCaptureModal from '@/components/LeadCaptureModal';
+import OnboardingModal from '@/components/OnboardingModal';
 import { createClient } from '@/lib/supabase/client';
 
 const SOURCE_RE = /\[Source:\s*([^\]]+)\]/g;
@@ -1282,36 +1283,41 @@ export default function ChatPage() {
         forceOpen={forceAuthOpen} 
         onClose={() => setForceAuthOpen(false)} 
       />
-      <AnimatePresence mode="popLayout">
-        <motion.div
-          key="sidebar"
-          initial={{ opacity: 0, x: -50, scale: 0.95 }}
-          animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: -50, scale: 0.95 }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          style={{ zIndex: 100 }}
-        >
-          <Sidebar
-            conversations={conversations}
-            activeId={activeId}
-            onSelect={selectConversation}
-            onNew={startNewChat}
-            onDelete={deleteConversation}
-            user={user}
-            loading={convLoading}
-            collapsed={collapsed}
-            onToggle={() => setCollapsed(c => !c)}
-            mobileOpen={mobileNavOpen}
-            onCloseMobile={() => setMobileNavOpen(false)}
-          />
-        </motion.div>
-      </AnimatePresence>
-      {mobileNavOpen && (
-        <div
-          className={styles.mobileBackdrop}
-          onClick={() => setMobileNavOpen(false)}
-          aria-hidden="true"
-        />
+      <OnboardingModal user={user} />
+      {user && (
+        <>
+          <AnimatePresence mode="popLayout">
+            <motion.div
+              key="sidebar"
+              initial={{ opacity: 0, x: -50, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -50, scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              style={{ zIndex: 100 }}
+            >
+              <Sidebar
+                conversations={conversations}
+                activeId={activeId}
+                onSelect={selectConversation}
+                onNew={startNewChat}
+                onDelete={deleteConversation}
+                user={user}
+                loading={convLoading}
+                collapsed={collapsed}
+                onToggle={() => setCollapsed(c => !c)}
+                mobileOpen={mobileNavOpen}
+                onCloseMobile={() => setMobileNavOpen(false)}
+              />
+            </motion.div>
+          </AnimatePresence>
+          {mobileNavOpen && (
+            <div
+              className={styles.mobileBackdrop}
+              onClick={() => setMobileNavOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+        </>
       )}
 
       <div className={styles.container}>
@@ -1328,7 +1334,7 @@ export default function ChatPage() {
             </button>
           )}
           
-          <div className={`${styles.headerBrand} ${!collapsed ? styles.hideOnDesktop : ''}`}>
+          <div className={`${styles.headerBrand} ${(!collapsed && user) ? styles.hideOnDesktop : ''}`}>
             <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={24} height={24} unoptimized />
             <span style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--ink)' }}>counsa.ai</span>
           </div>
@@ -1518,11 +1524,11 @@ export default function ChatPage() {
             </motion.div>
             
             <motion.h1 variants={fadeUp} className={styles.heroTitle}>
-              I&apos;ll show you the colleges you can <span className={styles.titleHighlight}>actually get into.</span>
+              Don&apos;t Risk <span className={styles.titleHighlight}>Your Admission.</span>
             </motion.h1>
             
             <motion.p variants={fadeUp} className={styles.heroDesc}>
-              Counsa instantly analyzes your rank, category, and state to recommend the perfect colleges—combining 15 years of expert counselling with an IITian&apos;s judgment.
+              Making the wrong choice costs you four years. Counsa protects your future by combining 15 years of elite counseling experience with an IITian&apos;s knowledge. It instantly calculates the absolute best colleges for your rank, category, and state.
             </motion.p>
 
             <motion.div variants={fadeUp} className={styles.heroComposer}>
