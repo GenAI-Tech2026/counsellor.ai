@@ -384,30 +384,32 @@ function userFromSession(sessionUser) {
 export default function ChatPage() {
   const supabase = useMemo(() => createClient(), []);
 
-  const [messages, setMessages] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = sessionStorage.getItem('counsa_guest_messages');
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return [GREETING];
-  });
+  const [messages, setMessages] = useState([GREETING]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
 
   // Auth + conversation state
   const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = sessionStorage.getItem('counsa_guest_profile');
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return null;
-  });
+  const [profile, setProfile] = useState(null);
+
+  // Hydrate guest chat state from sessionStorage on mount to avoid Next.js hydration mismatch
+  useEffect(() => {
+    try {
+      const savedMsgs = sessionStorage.getItem('counsa_guest_messages');
+      if (savedMsgs) {
+        const parsed = JSON.parse(savedMsgs);
+        if (parsed.length > 0) setMessages(parsed);
+      }
+    } catch {}
+
+    try {
+      const savedProfile = sessionStorage.getItem('counsa_guest_profile');
+      if (savedProfile) {
+        setProfile(JSON.parse(savedProfile));
+      }
+    } catch {}
+  }, []);
   const [conversations, setConversations] = useState([]);
   const [convLoading, setConvLoading] = useState(false);
   const [activeId, setActiveId] = useState(null);
@@ -550,6 +552,8 @@ export default function ChatPage() {
       if (profile) sessionStorage.setItem('counsa_guest_profile', JSON.stringify(profile));
     }
   }, [messages, profile, user]);
+
+
 
   // Defer all state updates into an async callback so the effect body itself
   // never calls setState synchronously (avoids cascading-render lint, #18).
@@ -754,6 +758,15 @@ export default function ChatPage() {
   }, []);
 
   const sendMessage = async (text) => {
+    if (!user) {
+      const userMessageCount = messages.filter(m => m.role === 'user' && m.text).length;
+      if (userMessageCount >= 7) {
+        setForceAuthOpen(true);
+        setToast('You have reached the free message limit. Please sign in to continue.');
+        return;
+      }
+    }
+
     const userMsg = { role: 'user', text, sources: [] };
     const history = messages
       .filter(m => !m.greeting && (m.role !== 'user' || m.text))
@@ -902,6 +915,16 @@ export default function ChatPage() {
       }
     }
   };
+
+  // Enforce a 7-message limit for guests before requiring sign in
+  useEffect(() => {
+    if (user) return;
+    const userMessageCount = messages.filter(m => m.role === 'user' && m.text).length;
+    if (userMessageCount >= 7) {
+      setForceAuthOpen(true);
+      setToast('You have reached the free message limit. Please sign in to continue.');
+    }
+  }, [messages, user]);
 
   // Abort the in-flight streaming request from the "Stop" control (#12).
   const handleStop = useCallback(() => {
