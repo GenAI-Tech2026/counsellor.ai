@@ -245,7 +245,7 @@ function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
     return `I'm having trouble analyzing the college data right now (API extraction failed). Please try asking again.`;
   }
   if (!safe.length && !border.length) {
-    return `I couldn't find colleges close to your rank of ${rankStr} (${catLabel}) in the available data. Try a different branch or location, or double-check the rank.`;
+    return `It looks like I couldn't find any colleges matching your exact rank of ${rankStr} (${catLabel}) in my current records. But don't worry! This might just mean we need to broaden our search. Try exploring a different branch, location, or double-checking your rank to see more options.`;
   }
 
   const table = (list) => [
@@ -259,10 +259,10 @@ function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
     `Here ${total === 1 ? 'is the college' : `are the ${total} colleges`} closest to your rank of ${rankStr} (${catLabel}):`,
     '',
     '### 🟢 Safe colleges',
-    safe.length ? table(safe) : '_No safe colleges near your rank in the available data._',
+    safe.length ? table(safe) : '_No safe colleges found near your rank in our current records._',
     '',
     '### 🟡 Borderline colleges',
-    border.length ? table(border) : 'No borderline colleges in the available data for this profile.',
+    border.length ? table(border) : '_No borderline colleges found in our current records for this profile._',
     '',
     '_Based on the most recent available data; future cutoffs may differ._',
   ];

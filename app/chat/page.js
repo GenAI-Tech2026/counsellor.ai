@@ -1408,7 +1408,7 @@ export default function ChatPage() {
               </span>
             )}
           </div>
-          {!user ? (
+          {!user && (
             <Link
               href="/login"
               prefetch={false}
@@ -1420,18 +1420,6 @@ export default function ChatPage() {
               <UserPlus size={16} />
               <span>Sign up</span>
             </Link>
-          ) : (
-            <button
-              type="button"
-              className={styles.exportButton}
-              onClick={handleExport}
-              disabled={!hasUserMessages}
-              aria-label="Download chat"
-              title="Download chat (.md)"
-            >
-              <Download size={16} />
-              <span>Download</span>
-            </button>
           )}
         </header>
 
