@@ -1527,6 +1527,7 @@
   .bubble { max-width: 90%; }
   /* Let bot replies (which can hold wide result tables) use the full width. */
   .bubbleBot { max-width: 100%; }
+  .avatar { display: none; }
   .headerTitle h2 { font-size: 1rem; }
 
   .hero { 

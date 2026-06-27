@@ -4,6 +4,11 @@ import path from 'path';
 const nextConfig = {
   // Keep supabase out of the bundler.
   serverExternalPackages: ['@supabase/supabase-js'],
+  
+  // Hide the Next.js dev server indicator that overlaps the mobile UI
+  devIndicators: {
+    buildActivityPosition: 'top-right',
+  },
 
   // Ignore native node modules when bundling @xenova/transformers for Vercel
   webpack: (config) => {

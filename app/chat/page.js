@@ -1502,9 +1502,6 @@ export default function ChatPage() {
           {chatQuestionPopup}
           {composer}
           {rateHint}
-          <p className={styles.disclaimer}>
-            Data from official TGEAPCET, AP EAPCET, JEE Main & Advanced, KCET & MHT-CET cutoffs. For reference only.
-          </p>
         </footer>
         </>
         ) : (
