@@ -194,12 +194,12 @@ function nextQuestion(profile, skipped) {
 // cutoff corpus — so this is a hand-picked UI section, not a retrieval result.
 // Thresholds are generous ("good student" band) and easy to tune per exam.
 const TOPPER_THRESHOLD = {
-  TGEAPCET: 15000,
-  APEAMCET: 15000,
-  KCET: 20000,
-  MHTCET: 20000,
-  JEE: 50000,
-  'JEE Advanced': 20000,
+  TGEAPCET: 15000000,
+  APEAMCET: 150000000,
+  KCET: 20000000,
+  MHTCET: 20000000,
+  JEE: 5000000000,
+  'JEE Advanced': 20000000,
 };
 
 // `key` maps to the server-side allowlist in /api/college (which holds the
