@@ -384,14 +384,30 @@ function userFromSession(sessionUser) {
 export default function ChatPage() {
   const supabase = useMemo(() => createClient(), []);
 
-  const [messages, setMessages] = useState([GREETING]);
+  const [messages, setMessages] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = sessionStorage.getItem('counsa_guest_messages');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return [GREETING];
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
 
   // Auth + conversation state
   const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = sessionStorage.getItem('counsa_guest_profile');
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return null;
+  });
   const [conversations, setConversations] = useState([]);
   const [convLoading, setConvLoading] = useState(false);
   const [activeId, setActiveId] = useState(null);
@@ -494,6 +510,46 @@ export default function ChatPage() {
       setConvLoading(false);
     }
   }, [user]);
+
+  // ── Sync guest chat to backend after login ──
+  useEffect(() => {
+    if (!user || activeIdRef.current) return;
+    const syncGuestChat = async () => {
+      const savedMsgs = sessionStorage.getItem('counsa_guest_messages');
+      if (!savedMsgs) return;
+      try {
+        const parsed = JSON.parse(savedMsgs);
+        if (parsed.length > 1) { // Has actual chat beyond greeting
+          const res = await fetch('/api/conversations', { method: 'POST', body: '{}' });
+          if (res.ok) {
+            const { conversation } = await res.json();
+            setActiveId(conversation.id);
+            activeIdRef.current = conversation.id;
+            for (const msg of parsed) {
+              if (msg.greeting || (!msg.text && msg.role === 'user')) continue;
+              await fetch(`/api/conversations/${conversation.id}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: msg.role, content: msg.text, sources: msg.sources || [] }),
+              });
+            }
+            loadConversations();
+          }
+        }
+      } catch {}
+      sessionStorage.removeItem('counsa_guest_messages');
+      sessionStorage.removeItem('counsa_guest_profile');
+    };
+    syncGuestChat();
+  }, [user, loadConversations]);
+
+  // Save guest state so it survives the OAuth redirect
+  useEffect(() => {
+    if (!user) {
+      sessionStorage.setItem('counsa_guest_messages', JSON.stringify(messages));
+      if (profile) sessionStorage.setItem('counsa_guest_profile', JSON.stringify(profile));
+    }
+  }, [messages, profile, user]);
 
   // Defer all state updates into an async callback so the effect body itself
   // never calls setState synchronously (avoids cascading-render lint, #18).
@@ -610,6 +666,8 @@ export default function ChatPage() {
     setSkipped({});
     setRankDraft('');
     setPopupDismissedAt(-1);
+    sessionStorage.removeItem('counsa_guest_messages');
+    sessionStorage.removeItem('counsa_guest_profile');
     inputRef.current?.focus();
   }, [isLoading, isStreaming]);
 
@@ -628,6 +686,8 @@ export default function ChatPage() {
     setSkipped({});
     setRankDraft('');
     setPopupDismissedAt(-1);
+    sessionStorage.removeItem('counsa_guest_messages');
+    sessionStorage.removeItem('counsa_guest_profile');
 
     try {
       const res = await fetch(`/api/conversations/${id}`);
