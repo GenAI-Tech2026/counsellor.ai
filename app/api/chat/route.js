@@ -4,12 +4,35 @@ import {
   retrieveApeamcetContext, retrieveKcetContext, retrieveMhtcetContext,
   JEE_SEAT_TYPE, JEE_GENDER,
   APEAMCET_CATEGORY_FIELD, KCET_CATEGORY_CODE, MHTCET_CATEGORY_CODE,
+  tokenizeCollege,
 } from '@/lib/rag';
 import { SYSTEM_PROMPT } from '@/lib/system-prompt';
 import { checkRateLimit, checkGlobalBudget, MAX_PER_HOUR, GUEST_MAX_PER_HOUR } from '@/lib/ratelimit';
 import { createClient } from '@/lib/supabase/server';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-for-build');
+
+/**
+ * Call model.generateContent with retries on TRANSIENT errors (Gemini 503 "high
+ * demand", 429, 500, network blips). These spikes are usually momentary, so a
+ * couple of short backoffs turn a user-visible "extraction failed" into a normal
+ * answer. Non-transient errors (bad request, auth) throw immediately.
+ */
+async function generateWithRetry(model, prompt, { attempts = 3, baseDelayMs = 400 } = {}) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await model.generateContent(prompt);
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err?.message || '');
+      const transient = /\b(503|502|500|429)\b|overloaded|high demand|unavailable|fetch failed|ECONNRESET|ETIMEDOUT/i.test(msg);
+      if (!transient || i === attempts - 1) throw err;
+      await new Promise((r) => setTimeout(r, baseDelayMs * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
 
 /**
  * Standardized error response.
@@ -49,12 +72,9 @@ const CATEGORY_FIELD = {
  * Uses Gemini so it understands "backward class A", "five hundred", "she", etc.
  */
 async function extractParams(history, currentMessage) {
-  const userMessages = [
-    ...history.filter(h => h.role === 'user').map(h =>
-      h.parts.map(p => p.text || '').join(' ')
-    ),
-    currentMessage,
-  ].join('\n');
+  const historyMessages = history.filter(h => h.role === 'user').map(h =>
+    h.parts.map(p => p.text || '').join(' ')
+  ).join('\n');
 
   // JSON response mode → raw JSON (no markdown fences to strip) and a tight
   // token cap, since the output is a tiny fixed-shape object.
@@ -70,10 +90,17 @@ async function extractParams(history, currentMessage) {
   const prompt = `Extract admission counselling parameters from this student conversation.
 Return ONLY valid JSON — no markdown, no explanation.
 
-Conversation:
+Earlier messages (context only):
 """
-${userMessages}
+${historyMessages || '(none)'}
 """
+
+LATEST message (AUTHORITATIVE — extract primarily from here):
+"""
+${currentMessage}
+"""
+
+CRITICAL — extract a DELTA, not the whole profile. Output a field's value ONLY when the LATEST message states it, changes it, or clearly refers to it (e.g. "there"/"that college" → a college named earlier; "ECE there" → branch ECE at that college). For EVERY field the latest message does not address, output null. Earlier values are already remembered by the system, so do NOT copy them into your answer — re-outputting an old exam/rank/category here would wrongly override the student's current context. If the latest message is vague (e.g. "which college should I choose?", "any suggestions?"), output all nulls.
 
 JSON schema (null for anything not mentioned):
 {
@@ -82,7 +109,8 @@ JSON schema (null for anything not mentioned):
   "category": <category code or null — see per-exam rules>,
   "gender": <"boys"|"girls" | null>,
   "branch_preference": <plain English or null>,
-  "location_preference": <city/district/institute name or null>
+  "location_preference": <city/district/institute name or null>,
+  "target_college": <specific named college/university the student is asking the cutoff FOR, or null>
 }
 
 Exam mapping:
@@ -121,17 +149,30 @@ Category mapping when exam is MHTCET (Maharashtra categories):
 - "OBC" → "OBC"; "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"
 - "VJ / VJNT" → "VJ"; "NT1 / NT-B" → "NT1"; "NT2 / NT-C" → "NT2"; "NT3 / NT-D" → "NT3"; "SEBC" → "SEBC"
 
+target_college vs location_preference (IMPORTANT — keep them distinct):
+- "target_college" → set ONLY when the student asks about ONE specific named college/university's cutoff or admission, e.g. "what's the CSE cutoff at JNTU Kakinada", "can I get into NIT Warangal", "last rank for Andhra University". Copy the institute/university name as written (keep the short common form, e.g. "JNTU Kakinada", "NIT Warangal").
+- "location_preference" → a soft area/type preference for RECOMMENDATIONS, e.g. "colleges near Hyderabad", "somewhere in Guntur", "prefer government colleges". NOT a specific institution.
+- If the student names a specific college AND it's clearly the thing they want the cutoff for, fill target_college (you may leave location_preference null).
+- ANAPHORA: if the latest message refers back to a college named earlier in the conversation ("there", "that college", "same college", "what about ECE there"), resolve it and fill target_college with that earlier college's name.
+
+IMPORTANT: return ONE single JSON object for the student's CURRENT intent — never an array, never one object per message.
+
 Other:
 - "girl / female / she / woman" → "girls"; "boy / male / he / man" → "boys"
 - "five hundred" → 500; "1000" → 1000
 - Expand branch abbreviations: "CSE" → "Computer Science", "ECE" → "Electronics and Communication", "EEE" → "Electrical and Electronics", "ME" or "Mech" → "Mechanical Engineering", "IT" → "Information Technology".`;
 
   try {
-    const result = await model.generateContent(prompt);
+    const result = await generateWithRetry(model, prompt);
     // JSON mode returns clean JSON; keep a defensive fence-strip just in case.
     const text = result.response.text().trim()
       .replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-    return JSON.parse(text);
+    let parsed = JSON.parse(text);
+    // Defensive: the model occasionally returns an ARRAY (one object per turn)
+    // instead of a single object. Spreading that into the profile would corrupt
+    // it with numeric keys ('0', '1', …), so collapse to the latest entry.
+    if (Array.isArray(parsed)) parsed = parsed[parsed.length - 1];
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
   }
@@ -188,6 +229,7 @@ function sanitizeParams(p) {
   if (typeof p.gender === 'string' && VALID_GENDERS.has(p.gender)) out.gender = p.gender;
   if (typeof p.branch_preference === 'string' && p.branch_preference.length <= 120) out.branch_preference = p.branch_preference;
   if (typeof p.location_preference === 'string' && p.location_preference.length <= 120) out.location_preference = p.location_preference;
+  if (typeof p.target_college === 'string' && p.target_college.length > 0 && p.target_college.length <= 120) out.target_college = p.target_college;
   return out;
 }
 
@@ -197,8 +239,9 @@ function sanitizeParams(p) {
 //   Safe       = closing rank >= 1.2× the student's rank (comfortably within).
 //   Borderline = closing rank in [0.85×, 1.2×) the rank (near / just-short).
 //   (closing < 0.85× rank is dropped — too far below to be relevant.)
-function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
-  let items = (Array.isArray(rows) ? rows : [])
+// Normalize model-extracted rows into clean {college, branch, closing, phase}.
+function normalizeRows(rows) {
+  return (Array.isArray(rows) ? rows : [])
     .map((r) => ({
       college: String(r?.college || '').trim(),
       branch: String(r?.branch || '').trim(),
@@ -206,19 +249,31 @@ function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
       phase: String(r?.phase || '').trim(),
     }))
     .filter((r) => r.college && Number.isFinite(r.closing) && r.closing > 0);
+}
 
-  // Optional loose branch filter — only if it leaves something to show.
-  if (branchPref) {
-    const toks = (branchPref.toLowerCase().match(/[a-z]{3,}/g) || [])
-      .filter((t) => !['and', 'the', 'engineering', 'branch', 'prefer', 'preferred'].includes(t));
-    if (toks.length) {
-      const matched = items.filter((r) => {
-        const b = r.branch.toLowerCase();
-        return toks.some((t) => b.includes(t));
-      });
-      if (matched.length) items = matched;
-    }
-  }
+// Branch filter — keeps only the BEST-matching branch tier. We score each row by
+// how many distinct query tokens its branch name contains and keep just the top
+// scorers, so "Electronics and Communication" (ECE) keeps ECE rows (2 hits) over
+// "Electrical and Electronics" (EEE) rows that merely share "electronics" (1).
+// Falls back to the full list if nothing matches, so a typo never blanks it.
+function filterByBranch(items, branchPref) {
+  if (!branchPref) return items;
+  const toks = (branchPref.toLowerCase().match(/[a-z]{3,}/g) || [])
+    .filter((t) => !['and', 'the', 'engineering', 'branch', 'prefer', 'preferred'].includes(t));
+  if (!toks.length) return items;
+  let best = 0;
+  const scored = items.map((r) => {
+    const b = r.branch.toLowerCase();
+    const score = toks.reduce((n, t) => n + (b.includes(t) ? 1 : 0), 0);
+    if (score > best) best = score;
+    return { r, score };
+  });
+  if (best === 0) return items;
+  return scored.filter((x) => x.score === best).map((x) => x.r);
+}
+
+function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
+  let items = filterByBranch(normalizeRows(rows), branchPref);
 
   // Dedupe by college+branch, keeping the entry closest to the rank.
   const seen = new Map();
@@ -267,6 +322,53 @@ function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
     '_Based on the most recent available data; future cutoffs may differ._',
   ];
   return parts.join('\n');
+}
+
+// Build the answer for a NAMED-COLLEGE lookup ("what's the CSE cutoff at JNTU
+// Kakinada"). Unlike buildCollegeAnswer this does NOT gate by the student's rank
+// or split Safe/Borderline — it simply reports the named college's actual
+// cutoffs (best/lowest per branch), sorted by closing rank.
+function buildLookupAnswer(rows, { catLabel, collegeName, branchPref }) {
+  const items = filterByBranch(normalizeRows(rows), branchPref);
+  if (items.length === 0) {
+    return `I couldn't find ${branchPref ? `${branchPref} ` : ''}seats at "${collegeName}" in the most recent available records. Double-check the college name or branch, or I can list options near your rank instead.`;
+  }
+
+  // One row per college+branch — keep the best (lowest) closing rank.
+  const seen = new Map();
+  for (const r of items) {
+    const key = `${r.college}|${r.branch}`.toLowerCase();
+    const prev = seen.get(key);
+    if (!prev || r.closing < prev.closing) seen.set(key, r);
+  }
+
+  // The institute filter also matches on shared AFFILIATION (so "JNTU Kakinada"
+  // finds JNTUK colleges), which means a university-name query pulls in every
+  // affiliated college too. Sorting by closing rank ascending naturally floats
+  // the flagship/constituent campus to the top — it has the most competitive
+  // (lowest) cutoff in its affiliation group — without brittle name matching.
+  const uniq = [...seen.values()].sort((a, b) => a.closing - b.closing).slice(0, 12);
+
+  // Honest framing: if several DISTINCT colleges match the name, say so rather
+  // than implying they're all one campus.
+  const distinctColleges = new Set(uniq.map((r) => r.college.toLowerCase())).size;
+  const heading = distinctColleges > 1
+    ? `Here are ${branchPref ? branchPref + ' ' : ''}options matching **${collegeName}** (${catLabel}), closest cutoffs first:`
+    : `Here ${uniq.length === 1 ? 'is the cutoff' : 'are the cutoffs'} for **${collegeName}** (${catLabel}), based on the most recent available data:`;
+
+  const table = [
+    `| Institute/College | Program/Branch | Closing/Last Rank (${catLabel}) | Phase/Round |`,
+    '| :--- | :--- | :--- | :--- |',
+    ...uniq.map((r) => `| ${r.college} | ${r.branch} | ${r.closing.toLocaleString('en-IN')} | ${r.phase || '—'} |`),
+  ].join('\n');
+
+  return [
+    heading,
+    '',
+    table,
+    '',
+    '_A lower closing rank means tougher admission; future cutoffs may differ._',
+  ].join('\n');
 }
 
 export async function POST(req) {
@@ -348,7 +450,14 @@ export async function POST(req) {
   //    topic shifts. (extractPromise resolved to {} when extraction was skipped.)
   const params = await extractPromise;
   mark('extract');
-  const resolved = { ...prior };
+  // EXAM SWITCH: if the new message names a different exam, the old exam's
+  // rank/category/gender no longer apply (a KCET rank isn't a TGEAPCET rank, and
+  // category codes differ per exam). Start fresh from the new params instead of
+  // inheriting stale fields. Compared case-insensitively since `params.exam` may
+  // not be normalized to the enum yet.
+  const examChanged = params?.exam && prior.exam &&
+    String(params.exam).toLowerCase().replace(/[^a-z]/g, '') !== String(prior.exam).toLowerCase().replace(/[^a-z]/g, '');
+  const resolved = examChanged ? {} : { ...prior };
   for (const [k, v] of Object.entries(params || {})) {
     if (v != null) resolved[k] = v;
   }
@@ -377,7 +486,19 @@ export async function POST(req) {
   }
   if (typeof resolved.gender === 'string') resolved.gender = resolved.gender.toLowerCase();
 
-  const { rank, exam, category, gender, branch_preference, location_preference } = resolved;
+  const { rank, exam, category, gender, branch_preference, location_preference, target_college } = resolved;
+
+  // NAMED-COLLEGE LOOKUP: when the student asks about a specific institute (e.g.
+  // "CSE cutoff at JNTU Kakinada") we hard-filter retrieval to that college via
+  // inst_tokens AND drop the rank-eligibility gate — so the college's true
+  // cutoff surfaces regardless of the student's own rank. Needs an exam (to pick
+  // the table) and at least one distinctive token from the name.
+  const instTokens = (target_college && exam) ? tokenizeCollege(target_college) : null;
+  // A named college triggers lookup INTENT (drop the rank gate, bias retrieval to
+  // that college) even when it yields no hard tokens — e.g. "RV College" → only
+  // the 2-char "rv", which we don't hard-filter on. Without tokens we lean on the
+  // semantic query (which includes the college name) instead of the SQL filter.
+  const lookupActive = !!target_college && !!exam;
 
   const hasRank = rank != null;
   // Gender is a cutoff axis for the state EAMCET-style exams and JoSAA (female-only
@@ -422,7 +543,12 @@ export async function POST(req) {
       contextLabel = isAdv
         ? 'JEE Advanced (IIT) official data — eligible programs only'
         : 'JEE Main JoSAA official data — eligible programs only';
-      if (hasAllRequired) {
+      if (lookupActive) {
+        const seatType = category ? (JEE_SEAT_TYPE[String(category).toUpperCase()] || null) : null;
+        const genderVal = gender ? (JEE_GENDER[gender] ?? null) : null;
+        const parts = [label, target_college, category, gender, branch_preference, 'closing rank'].filter(Boolean);
+        ({ contextBlock } = await retrieve(parts.join(' '), 40, { instTokens, seatType, gender: genderVal }));
+      } else if (hasAllRequired) {
         const seatType = JEE_SEAT_TYPE[String(category).toUpperCase()] || null;
         const genderVal = JEE_GENDER[gender] ?? null;
         const parts = [label, category, gender, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
@@ -434,7 +560,10 @@ export async function POST(req) {
       }
     } else if (exam === 'APEAMCET') {
       contextLabel = 'APEAMCET (AP EAPCET) official last-rank data — eligible colleges only';
-      if (hasAllRequired) {
+      if (lookupActive) {
+        const parts = ['APEAMCET 2022', target_college, category, gender, branch_preference, 'last rank'].filter(Boolean);
+        ({ contextBlock } = await retrieveApeamcetContext(parts.join(' '), 40, null, { instTokens }));
+      } else if (hasAllRequired) {
         const fieldName = APEAMCET_CATEGORY_FIELD[category]?.[gender];
         const whereFilter = fieldName ? { [fieldName]: { '$gte': retrievalMinRank } } : null;
         const parts = ['APEAMCET 2022', category, gender, `rank ${rank}`, 'eligible colleges last rank', ...prefParts];
@@ -446,7 +575,10 @@ export async function POST(req) {
       }
     } else if (exam === 'KCET') {
       contextLabel = 'KCET Engineering official cutoff data — eligible colleges only';
-      if (hasAllRequired) {
+      if (lookupActive) {
+        const parts = ['KCET 2024 Engineering', target_college, category, branch_preference, 'closing rank'].filter(Boolean);
+        ({ contextBlock } = await retrieveKcetContext(parts.join(' '), 40, { instTokens }));
+      } else if (hasAllRequired) {
         const code = KCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['KCET 2024 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         ({ contextBlock } = await retrieveKcetContext(parts.join(' '), 40, { rankField: code, rank: retrievalMinRank }));
@@ -457,7 +589,10 @@ export async function POST(req) {
       }
     } else if (exam === 'MHTCET') {
       contextLabel = 'MHT-CET Engineering official cutoff data — eligible colleges only';
-      if (hasAllRequired) {
+      if (lookupActive) {
+        const parts = ['MHT-CET 2024 Engineering', target_college, category, branch_preference, 'closing rank'].filter(Boolean);
+        ({ contextBlock } = await retrieveMhtcetContext(parts.join(' '), 40, { instTokens }));
+      } else if (hasAllRequired) {
         const code = MHTCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['MHT-CET 2024 Engineering', category, `CET merit number ${rank}`, 'eligible colleges closing rank', ...prefParts];
         ({ contextBlock } = await retrieveMhtcetContext(parts.join(' '), 40, { rankField: code, rank: retrievalMinRank }));
@@ -468,7 +603,10 @@ export async function POST(req) {
       }
     } else {
       // Default: TGEAPCET (Telangana) — also covers exam === null / 'TGEAPCET'.
-      if (hasAllRequired) {
+      if (lookupActive) {
+        const parts = ['TGEAPCET 2025', target_college, category, gender, branch_preference, 'last rank cutoff'].filter(Boolean);
+        ({ contextBlock } = await retrieveContext(parts.join(' '), 40, null, { instTokens }));
+      } else if (hasAllRequired) {
         const fieldName = CATEGORY_FIELD[category]?.[gender];
         const whereFilter = fieldName ? { [fieldName]: { '$gte': retrievalMinRank } } : null;
         const parts = ['TGEAPCET 2025', category, gender, `rank ${rank}`, 'eligible colleges last rank cutoff', ...prefParts];
@@ -496,6 +634,7 @@ export async function POST(req) {
   if (genderMatters && gender) profileBits.push(`gender ${gender === 'girls' ? 'Girls' : 'Boys'}`);
   if (branch_preference) profileBits.push(`branch preference ${branch_preference}`);
   if (location_preference) profileBits.push(`location preference ${location_preference}`);
+  if (target_college) profileBits.push(`asking specifically about ${target_college}`);
   const profileLine = profileBits.length ? `STUDENT PROFILE (already provided — do not re-ask): ${profileBits.join(', ')}.` : '';
 
   const augmentedMessage = [
@@ -511,13 +650,18 @@ export async function POST(req) {
   }));
 
   // 8. Generate the answer.
-  // When all params are known AND we retrieved context, we use a DETERMINISTIC
-  // path: the model only EXTRACTS the eligible colleges from the context as JSON
-  // (a transcription task it does reliably); then code does the Safe/Borderline
-  // classification, the "5 nearest to the rank" selection, and the formatting —
-  // so the boundary is never mis-judged. Otherwise (bot is asking a question),
-  // we stream the model's conversational reply directly.
-  const useDeterministic = !!contextBlock && hasAllRequired;
+  // Two DETERMINISTIC paths (the model only EXTRACTS rows from context as JSON —
+  // a transcription task it does reliably — then code formats):
+  //   • RECOMMEND: all params known → Safe/Borderline classification by rank.
+  //   • LOOKUP: a named college is in play and we know the category → just report
+  //     that college's actual cutoffs (no rank gate, no Safe/Borderline).
+  // A named-college lookup whose category isn't known yet falls through to the
+  // conversational stream, which still grounds on the inst-filtered context.
+  // Deterministic lookup table only when we have hard tokens to filter the named
+  // college (otherwise the retrieved rows aren't guaranteed to be that college,
+  // so we let the model answer conversationally from the semantic context).
+  const lookupReady = lookupActive && !!instTokens && !!category && (genderMatters ? !!gender : true);
+  const useDeterministic = !!contextBlock && (lookupReady || (hasAllRequired && !lookupActive));
   if (useDeterministic) {
     const isJee = exam === 'JEE' || exam === 'JEE Advanced';
       const genderLabel = genderMatters ? (gender === 'girls' ? 'Girls' : 'Boys') : '';
@@ -545,7 +689,7 @@ ${closingRule}
 
       let rows = [];
       try {
-        const r = await extractModel.generateContent(extractPrompt);
+        const r = await generateWithRetry(extractModel, extractPrompt);
         const txt = r.response.text().trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
         const parsed = JSON.parse(txt);
         if (Array.isArray(parsed)) rows = parsed;
@@ -561,7 +705,9 @@ ${closingRule}
       mark('extract');
       if (timing) console.log('[chat] deterministic', JSON.stringify(marks));
 
-      const finalText = buildCollegeAnswer(rows, { rank, catLabel, branchPref: branch_preference });
+      const finalText = lookupReady
+        ? buildLookupAnswer(rows, { catLabel, collegeName: target_college, branchPref: branch_preference })
+        : buildCollegeAnswer(rows, { rank, catLabel, branchPref: branch_preference });
       const out = new TextEncoder().encode(finalText);
       const stream = new ReadableStream({
         start(controller) { controller.enqueue(out); controller.close(); },

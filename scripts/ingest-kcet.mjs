@@ -24,6 +24,7 @@ import pkg from 'xlsx';
 const { readFile, utils: xlsxUtils } = pkg;
 import { createClient } from '@supabase/supabase-js';
 import { embedBatch } from '../lib/embeddings.mjs';
+import { enrichChunk } from '../lib/text-enrich.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FILE = join(__dirname, '../public/data/kcet/KCET_2024_ENGG_AllRounds_CutOff.xlsx');
@@ -82,12 +83,15 @@ function buildChunkText(rec) {
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([cat, rank]) => `${cat}: ${rank}`)
     .join(', ');
-  return [
+  const base = [
     `KCET 2024 Engineering cut-off (${rec.round}, ${rec.region} stream).`,
     `College: ${rec.college_name} (Code: ${rec.college_code}), ${rec.place}.`,
     `Branch: ${rec.branch_name} (Code: ${rec.branch_code}).`,
     `Closing ranks by category — ${rankParts}.`,
   ].join(' ');
+  return base + enrichChunk({
+    college: rec.college_name, place: rec.place, branch: rec.branch_name,
+  });
 }
 
 function chunkId(rec) {

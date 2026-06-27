@@ -23,6 +23,7 @@ import pkg from 'xlsx';
 const { readFile, utils: xlsxUtils } = pkg;
 import { createClient } from '@supabase/supabase-js';
 import { embedBatch } from '../lib/embeddings.mjs';
+import { enrichChunk, expandUniversity } from '../lib/text-enrich.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '../public/data/tgeamcet');
@@ -156,13 +157,17 @@ function buildChunkText(rec) {
     .map(f => `${RANK_LABELS[f]}: ${rec[f]}`)
     .join(', ');
 
-  return [
+  const base = [
     `TGEAPCET 2025 ${rec.phase} — Last Rank Statement`,
     `College: ${rec.inst_name} (Code: ${rec.inst_code}), ${rec.place}, ${rec.dist_code}.`,
     `Type: ${rec.col_type || 'N/A'}, ${rec.co_ed || 'N/A'}. Affiliated to: ${rec.affiliated || 'N/A'}.`,
     `Branch: ${rec.branch_name} (Code: ${rec.branch_code}).`,
     `Last ranks by category — ${rankParts}.`,
   ].join(' ');
+  return base + enrichChunk({
+    college: rec.inst_name, place: rec.place, dist: rec.dist_code,
+    affiliated: rec.affiliated, branch: rec.branch_name,
+  });
 }
 
 async function main() {
@@ -208,12 +213,17 @@ async function main() {
     `${r.inst_code}_${r.branch_code}_${r.phase.replace(/\s+/g, '')}`
   );
 
-  const { data: existing } = await supabase
-    .from('tgeapcet_2025')
-    .select('chunk_id')
-    .in('chunk_id', allChunkIds);
-
-  const existingIds = new Set((existing || []).map(r => r.chunk_id));
+  // Page the existing-id check (Postgrest rejects/hangs on a single huge `.in()`
+  // URL — this dataset has tens of thousands of chunk_ids).
+  const existingIds = new Set();
+  const EXIST_PAGE = 1000;
+  for (let i = 0; i < allChunkIds.length; i += EXIST_PAGE) {
+    const { data } = await supabase
+      .from('tgeapcet_2025')
+      .select('chunk_id')
+      .in('chunk_id', allChunkIds.slice(i, i + EXIST_PAGE));
+    (data || []).forEach(r => existingIds.add(r.chunk_id));
+  }
   const pending = allRecords.filter((_, i) => !existingIds.has(allChunkIds[i]));
 
   if (pending.length === 0) {
@@ -245,6 +255,7 @@ async function main() {
         place: rec.place, dist_code: rec.dist_code, co_ed: rec.co_ed,
         col_type: rec.col_type, branch_code: rec.branch_code,
         branch_name: rec.branch_name, affiliated: rec.affiliated,
+        aff_full: expandUniversity(rec.affiliated),
         ...Object.fromEntries(RANK_FIELDS.map(f => [f, rec[f] ?? 0])),
       },
     }));

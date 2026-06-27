@@ -23,6 +23,7 @@ import pkg from 'xlsx';
 const { readFile, utils: xlsxUtils } = pkg;
 import { createClient } from '@supabase/supabase-js';
 import { embedBatch } from '../lib/embeddings.mjs';
+import { enrichChunk } from '../lib/text-enrich.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FILE = join(__dirname, '../public/data/jeeadvanced/JEE_Advanced_2025_AllRounds_IIT_ORCR.xlsx');
@@ -83,13 +84,14 @@ function parseSheet(ws, sheetName) {
 
 function buildChunkText(rec) {
   const genderShort = rec.gender.startsWith('Female') ? 'Female-only' : 'Gender-Neutral';
-  return [
+  const base = [
     `JEE Advanced 2025 IIT seat allocation (${rec.round}).`,
     `Institute: ${rec.institute} (IIT).`,
     `Program: ${rec.program}.`,
     `Quota: ${rec.quota}. Seat type: ${rec.seat_type}. Gender: ${genderShort}.`,
     `Opening rank: ${rec.opening_rank}, Closing rank: ${rec.closing_rank}.`,
   ].join(' ');
+  return base + enrichChunk({ college: rec.institute, branch: rec.program });
 }
 
 function chunkId(rec) {
