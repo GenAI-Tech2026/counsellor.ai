@@ -384,30 +384,21 @@ function userFromSession(sessionUser) {
 export default function ChatPage() {
   const supabase = useMemo(() => createClient(), []);
 
-  const [messages, setMessages] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = sessionStorage.getItem('counsa_guest_messages');
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return [GREETING];
-  });
+  // Initialized to the SSR-safe default; the saved guest chat is restored from
+  // sessionStorage in a mount effect below (see `hydrated`). Reading storage in
+  // the initializer made the client's first render diverge from the server's
+  // HTML, causing a hydration mismatch (the header exam chip in particular).
+  const [messages, setMessages] = useState([GREETING]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
 
   // Auth + conversation state
   const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = sessionStorage.getItem('counsa_guest_profile');
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return null;
-  });
+  const [profile, setProfile] = useState(null);
+  // False until the post-mount restore runs, so the save effect doesn't clobber
+  // saved sessionStorage with the SSR defaults before they're rehydrated.
+  const [hydrated, setHydrated] = useState(false);
   const [conversations, setConversations] = useState([]);
   const [convLoading, setConvLoading] = useState(false);
   const [activeId, setActiveId] = useState(null);
@@ -543,13 +534,28 @@ export default function ChatPage() {
     syncGuestChat();
   }, [user, loadConversations]);
 
-  // Save guest state so it survives the OAuth redirect
+  // Restore guest chat from sessionStorage AFTER mount (not in useState init) so
+  // the client's first render matches the server HTML and React doesn't report a
+  // hydration mismatch. Runs once; marks `hydrated` so the save effect can start.
   useEffect(() => {
+    try {
+      const savedMsgs = sessionStorage.getItem('counsa_guest_messages');
+      if (savedMsgs) setMessages(JSON.parse(savedMsgs));
+      const savedProfile = sessionStorage.getItem('counsa_guest_profile');
+      if (savedProfile) setProfile(JSON.parse(savedProfile));
+    } catch {}
+    setHydrated(true);
+  }, []);
+
+  // Save guest state so it survives the OAuth redirect. Gated on `hydrated` so a
+  // pre-restore run can't overwrite the saved chat with the SSR defaults.
+  useEffect(() => {
+    if (!hydrated) return;
     if (!user) {
       sessionStorage.setItem('counsa_guest_messages', JSON.stringify(messages));
       if (profile) sessionStorage.setItem('counsa_guest_profile', JSON.stringify(profile));
     }
-  }, [messages, profile, user]);
+  }, [messages, profile, user, hydrated]);
 
   // Defer all state updates into an async callback so the effect body itself
   // never calls setState synchronously (avoids cascading-render lint, #18).

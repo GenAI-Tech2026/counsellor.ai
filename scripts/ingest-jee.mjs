@@ -54,7 +54,10 @@ function instituteType(name) {
 }
 
 function toRank(v) {
-  const n = parseInt(String(v).replace(/[^0-9]/g, ''), 10);
+  // Drop any fractional part BEFORE stripping separators. Some source cells are
+  // strings like "1105820.0"; removing the dot first would append the "0" and
+  // 10× the rank ("11058200"). split('.')[0] keeps only the integer portion.
+  const n = parseInt(String(v).split('.')[0].replace(/[^0-9]/g, ''), 10);
   return Number.isFinite(n) ? n : 0;
 }
 

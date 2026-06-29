@@ -110,8 +110,16 @@ JSON schema (null for anything not mentioned):
   "gender": <"boys"|"girls" | null>,
   "branch_preference": <plain English or null>,
   "location_preference": <city/district/institute name or null>,
-  "target_college": <specific named college/university the student is asking the cutoff FOR, or null>
+  "target_college": <specific named college/university the student is asking the cutoff FOR, or null>,
+  "intent": <"list_colleges" | "advice" | "college_lookup" | "off_topic" | "smalltalk" | null>
 }
+
+Intent — classify what the LATEST message is asking for (always set it; null only if truly unclear):
+- "list_colleges" — wants the college/options list for their profile, or is giving/refining profile details to get that list (rank, category, branch, "show me", "any options?", "what can I get?").
+- "advice" — wants guidance, an opinion, or a comparison rather than a raw list: "CSE or ECE — which is better?", "is NIT Warangal good?", "should I prefer branch or college?", "what are placements like?".
+- "college_lookup" — asks the cutoff/admission of ONE specific named college (pairs with target_college).
+- "off_topic" — unrelated to engineering admissions (weather, math, coding, recipes, general knowledge).
+- "smalltalk" — greeting, thanks, or asking who/what you are.
 
 Exam mapping:
 - "eamcet / eapcet / tgeapcet / Telangana EAPCET" → "TGEAPCET"
@@ -159,6 +167,7 @@ IMPORTANT: return ONE single JSON object for the student's CURRENT intent — ne
 
 Other:
 - "girl / female / she / woman" → "girls"; "boy / male / he / man" → "boys"
+- JoSAA seat-type wording for JEE / JEE Advanced: "gender-neutral / gender neutral / GN / neutral seat / open seat" → "boys" (the Gender-Neutral pool); "female-only / female only / supernumerary female" → "girls". Treat these as the gender field, never the category.
 - "five hundred" → 500; "1000" → 1000
 - Expand branch abbreviations: "CSE" → "Computer Science", "ECE" → "Electronics and Communication", "EEE" → "Electrical and Electronics", "ME" or "Mech" → "Mechanical Engineering", "IT" → "Information Technology".`;
 
@@ -193,6 +202,19 @@ function isProfileComplete(p) {
 const CHANGE_RE = /\d|\b(eamcet|eapcet|tgeapcet|apeamcet|jee|josaa|nit|iit|iiit|gfti|advanced|kcet|kea|mht|cet|cap|oc|obc|sc|st|ews|bc|gm|general|open|reserv|boy|girl|male|female|she|he|rank|cse|ece|mech|civil|eee|branch|college|university|city|district|location|near|prefer)\b/i;
 function looksLikeChange(msg) {
   return CHANGE_RE.test(String(msg || ''));
+}
+
+// A "plain follow-up": the WHOLE message is a short, unmistakable continuation
+// that can only mean "give me the colleges for my existing profile" — "yes",
+// "show the list", "more options", "any safe ones?". Used purely to skip the
+// extractor's intent-classification call on these (a latency/cost fast path).
+// Anchored ^…$ on purpose: a message that merely CONTAINS a follow-up word ("give
+// me a recipe") must NOT match, or it would skip classification and wrongly get a
+// college dump. False negatives here are harmless — they just run the (cheap)
+// extractor, which still classifies intent correctly — so this stays strict.
+const FOLLOWUP_RE = /^\s*(?:(?:yes|yeah|yep|yup|sure|ok|okay|kk?|fine|please|pls|thanks|thank you|go ahead|continue|proceed|go on|next|and\??|more|any more|others?|other options|show|show me|show the list|see more|list( them)?|the list|options|any options|safe( ones| colleges)?|borderline( ones| colleges)?|reach( ones| colleges)?|recommend( some)?|which( ones)?)[\s,.!?]*)+$/i;
+function looksLikeFollowUp(msg) {
+  return FOLLOWUP_RE.test(String(msg || ''));
 }
 
 // Cap the message we accept — a multi-MB body would blow up tokens/memory/cost.
@@ -239,6 +261,13 @@ function sanitizeParams(p) {
 //   Safe       = closing rank >= 1.2× the student's rank (comfortably within).
 //   Borderline = closing rank in [0.85×, 1.2×) the rank (near / just-short).
 //   (closing < 0.85× rank is dropped — too far below to be relevant.)
+// Closing ranks above this are data artifacts — e.g. a source-parsing glitch
+// that yields an 8-digit rank (we've seen ~11,000,000). No real exam admits at a
+// rank this high (JEE Main, the largest, has on the order of ~1.5M candidates),
+// so such rows are dropped before classification to keep them from surfacing as
+// bogus "safe" options for an impossibly high rank.
+const MAX_SANE_CLOSING = 2_000_000;
+
 // Normalize model-extracted rows into clean {college, branch, closing, phase}.
 function normalizeRows(rows) {
   return (Array.isArray(rows) ? rows : [])
@@ -248,7 +277,7 @@ function normalizeRows(rows) {
       closing: Math.trunc(Number(r?.closing)),
       phase: String(r?.phase || '').trim(),
     }))
-    .filter((r) => r.college && Number.isFinite(r.closing) && r.closing > 0);
+    .filter((r) => r.college && Number.isFinite(r.closing) && r.closing > 0 && r.closing <= MAX_SANE_CLOSING);
 }
 
 // Branch filter — keeps only the BEST-matching branch tier. We score each row by
@@ -296,7 +325,10 @@ function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
     .slice(0, 5);
 
   const rankStr = rank.toLocaleString('en-IN');
-  if (items.length === 0) {
+  // Only a genuinely empty extraction (the model returned no rows at all) is a
+  // transcription failure. If rows came back but none survived branch / sane-rank
+  // filtering, that's an honest "no match for this profile", handled just below.
+  if (!Array.isArray(rows) || rows.length === 0) {
     return `I'm having trouble analyzing the college data right now (API extraction failed). Please try asking again.`;
   }
   if (!safe.length && !border.length) {
@@ -399,13 +431,17 @@ export async function POST(req) {
   // Validate + whitelist client-supplied params before they touch retrieval/cache.
   const prior = sanitizeParams(priorParams);
 
-  // Only re-run the LLM extractor when it can actually change something: the
-  // profile is incomplete, or the message mentions a number / exam / category /
-  // branch keyword. Otherwise reuse the known profile and skip a Gemini call.
+  // Re-run the LLM extractor when it can change something OR when we need it to
+  // judge intent. We skip it (reuse the known profile, save a Gemini call) ONLY
+  // for a clear in-domain follow-up on an already-complete profile ("show the
+  // list", "yes", "any options?") — those always mean "give the colleges". Any
+  // other message on a complete profile (a profile change, an advice question, or
+  // something off-topic) goes through the extractor so `intent` is classified.
   // Cap the history we feed the models to the last few turns (cost + latency).
   const HISTORY_WINDOW = 10;
   const recentHistory = Array.isArray(history) ? history.slice(-HISTORY_WINDOW) : [];
-  const shouldExtract = !isProfileComplete(prior) || looksLikeChange(message);
+  const isPlainFollowUp = isProfileComplete(prior) && !looksLikeChange(message) && looksLikeFollowUp(message);
+  const shouldExtract = !isPlainFollowUp;
   const extractPromise = shouldExtract
     ? extractParams(recentHistory, message)
     : Promise.resolve({});
@@ -450,6 +486,12 @@ export async function POST(req) {
   //    topic shifts. (extractPromise resolved to {} when extraction was skipped.)
   const params = await extractPromise;
   mark('extract');
+  // Pull the LLM's intent classification out of the delta — it describes the
+  // latest message, it's not a profile field, so it must not be merged into
+  // `resolved` (that would leak it into retrieval keys + the X-Chat-Params
+  // header). Null when extraction was skipped (a plain follow-up → list intent).
+  const intent = params && typeof params.intent === 'string' ? params.intent : null;
+  if (params && 'intent' in params) delete params.intent;
   // EXAM SWITCH: if the new message names a different exam, the old exam's
   // rank/category/gender no longer apply (a KCET rank isn't a TGEAPCET rank, and
   // category codes differ per exam). Start fresh from the new params instead of
@@ -485,6 +527,17 @@ export async function POST(req) {
     }
   }
   if (typeof resolved.gender === 'string') resolved.gender = resolved.gender.toLowerCase();
+
+  // Deterministic gender backstop for JEE/JoSAA: the extractor sometimes drops
+  // "gender-neutral"/"female-only" (JoSAA seat-type wording, not boy/girl), which
+  // would leave gender null and silently block the complete-profile path. Infer
+  // it from the raw message when the LLM didn't, so a JoSAA-phrased query still
+  // resolves. (boys = Gender-Neutral pool, girls = Female-only pool.)
+  if ((resolved.exam === 'JEE' || resolved.exam === 'JEE Advanced') && !resolved.gender) {
+    const m = String(message).toLowerCase();
+    if (/\bfemale[\s-]*only\b|supernumerary/.test(m)) resolved.gender = 'girls';
+    else if (/\bgender[\s-]*neutral\b|\bgn\b|\bneutral seat\b/.test(m)) resolved.gender = 'boys';
+  }
 
   const { rank, exam, category, gender, branch_preference, location_preference, target_college } = resolved;
 
@@ -535,8 +588,24 @@ export async function POST(req) {
   const prefParts = [];
   if (branch_preference) prefParts.push(branch_preference);
   if (location_preference) prefParts.push(location_preference);
+
+  // INTENT-DRIVEN ROUTING (replaces the old keyword heuristics): the extractor
+  // classifies the latest message, so we can tell "what's the capital of France?"
+  // (off-topic) and "CSE or ECE — which is better?" (advice) apart from "show me
+  // the colleges" (list) reliably, instead of guessing from keywords.
+  //   • OFF-TOPIC → skip retrieval; the conversational model declines & steers
+  //     back per the system prompt (no college list dumped for unrelated asks).
+  //   • ADVICE → still retrieve (so the model can ground its guidance in real
+  //     cutoffs) but route to the conversational model instead of the
+  //     deterministic Safe/Borderline table, so it actually answers the question.
+  // A clear follow-up skips extraction (intent === null) → defaults to listing.
+  const offTopic = (intent === 'off_topic' || intent === 'smalltalk') && !lookupActive;
+  const wantsAdvice = intent === 'advice' && !lookupActive;
+
   try {
-    if (exam === 'JEE' || exam === 'JEE Advanced') {
+    if (offTopic) {
+      // Intentionally leave contextBlock empty → conversational deflection path.
+    } else if (exam === 'JEE' || exam === 'JEE Advanced') {
       const isAdv = exam === 'JEE Advanced';
       const retrieve = isAdv ? retrieveJeeAdvancedContext : retrieveJeeContext;
       const label = isAdv ? 'JEE Advanced' : 'JEE Main JoSAA';
@@ -661,7 +730,10 @@ export async function POST(req) {
   // college (otherwise the retrieved rows aren't guaranteed to be that college,
   // so we let the model answer conversationally from the semantic context).
   const lookupReady = lookupActive && !!instTokens && !!category && (genderMatters ? !!gender : true);
-  const useDeterministic = !!contextBlock && (lookupReady || (hasAllRequired && !lookupActive));
+  // An advice question routes to the conversational model even with a full
+  // profile, so it gets a real answer (grounded in `contextBlock`) instead of a
+  // Safe/Borderline table.
+  const useDeterministic = !wantsAdvice && !!contextBlock && (lookupReady || (hasAllRequired && !lookupActive));
   if (useDeterministic) {
     const isJee = exam === 'JEE' || exam === 'JEE Advanced';
       const genderLabel = genderMatters ? (gender === 'girls' ? 'Girls' : 'Boys') : '';
@@ -712,6 +784,22 @@ ${closingRule}
       const stream = new ReadableStream({
         start(controller) { controller.enqueue(out); controller.close(); },
       });
+      return new Response(stream, {
+        headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
+      });
+    }
+
+    // COMPLETE PROFILE BUT NO ELIGIBLE COLLEGES (e.g. an impossibly high rank, or
+    // no records for this category): answer deterministically. Without this, the
+    // empty context falls to the conversational model, which can improvise a
+    // misleading table from earlier turns in the chat history.
+    if (!offTopic && !wantsAdvice && !contextBlock && hasAllRequired && !lookupActive) {
+      const genderLabel = genderMatters ? (gender === 'girls' ? 'Girls' : 'Boys') : '';
+      const catLabel = [category, genderLabel].filter(Boolean).join(' ');
+      const rankStr = Number(rank).toLocaleString('en-IN');
+      const finalText = `I couldn't find any colleges in our current records that admit at a rank of ${rankStr}${catLabel ? ` (${catLabel})` : ''}. Every option on record closes at a stronger (lower) rank, so there's no eligible match for this profile. Please double-check the rank, or try a different exam, category, or branch and I'll take another look.`;
+      const out = new TextEncoder().encode(finalText);
+      const stream = new ReadableStream({ start(c) { c.enqueue(out); c.close(); } });
       return new Response(stream, {
         headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
       });
