@@ -301,8 +301,21 @@ function filterByBranch(items, branchPref) {
   return scored.filter((x) => x.score === best).map((x) => x.r);
 }
 
-function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
+function buildCollegeAnswer(rows, { rank, catLabel, branchPref, locationPref }) {
   let items = filterByBranch(normalizeRows(rows), branchPref);
+
+  // Optional loose location filter — only if it leaves something to show.
+  if (locationPref) {
+    const toks = (locationPref.toLowerCase().match(/[a-z]{3,}/g) || [])
+      .filter((t) => !['and', 'the', 'college', 'university', 'institute', 'technology', 'prefer', 'preferred', 'location', 'city', 'near', 'iit', 'nit', 'iiit'].includes(t));
+    if (toks.length) {
+      const matched = items.filter((r) => {
+        const c = r.college.toLowerCase();
+        return toks.every((t) => c.includes(t));
+      });
+      if (matched.length) items = matched;
+    }
+  }
 
   // Dedupe by college+branch, keeping the entry closest to the rank.
   const seen = new Map();
@@ -325,13 +338,18 @@ function buildCollegeAnswer(rows, { rank, catLabel, branchPref }) {
     .slice(0, 5);
 
   const rankStr = rank.toLocaleString('en-IN');
-  // Only a genuinely empty extraction (the model returned no rows at all) is a
-  // transcription failure. If rows came back but none survived branch / sane-rank
-  // filtering, that's an honest "no match for this profile", handled just below.
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return `I'm having trouble analyzing the college data right now (API extraction failed). Please try asking again.`;
+  // Nothing survived extraction + filtering (empty extraction, or branch/location/
+  // sane-rank filters removed everything). Return null so the caller falls through
+  // to the conversational model rather than emitting a hard error or empty table.
+  if (items.length === 0) {
+    return null;
   }
   if (!safe.length && !border.length) {
+    if (uniq.length > 0) {
+      // Find the college with the closing rank closest to the user's rank
+      const closest = uniq.reduce((prev, curr) => (Math.abs(curr.closing - rank) < Math.abs(prev.closing - rank) ? curr : prev));
+      return `**No**, based on the latest data, your rank of ${rankStr} (${catLabel}) is too high for the specific colleges or branches you asked about.\n\nFor reference, the closest match found was **${closest.college}** (${closest.branch}), which closed at a rank of **${closest.closing.toLocaleString('en-IN')}**.\n\nI recommend broadening your search preferences to find safer options.`;
+    }
     return `It looks like I couldn't find any colleges matching your exact rank of ${rankStr} (${catLabel}) in my current records. But don't worry! This might just mean we need to broaden our search. Try exploring a different branch, location, or double-checking your rank to see more options.`;
   }
 
@@ -566,7 +584,7 @@ export async function POST(req) {
   // options the student is *just* short of — these become the "Borderline"
   // section. The model still classifies against the TRUE rank (sent in the
   // message), so Safe vs Borderline stays accurate.
-  const retrievalMinRank = hasRank ? Math.max(1, Math.floor(rank * 0.85)) : null;
+  const retrievalMinRank = (hasRank && !location_preference) ? Math.max(1, Math.floor(rank * 0.85)) : null;
 
   // Header value shared by every successful response (streaming + cache hit).
   const paramsHeader = encodeURIComponent(JSON.stringify(resolved));
@@ -621,7 +639,11 @@ export async function POST(req) {
         const seatType = JEE_SEAT_TYPE[String(category).toUpperCase()] || null;
         const genderVal = JEE_GENDER[gender] ?? null;
         const parts = [label, category, gender, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
-        ({ contextBlock } = await retrieve(parts.join(' '), 40, { rank: retrievalMinRank, seatType, gender: genderVal }));
+        const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieve(queryStr, 40, { rank: retrievalMinRank, seatType, gender: genderVal }));
+        if (!contextBlock) {
+          ({ contextBlock } = await retrieve(queryStr, 10, { rank: null, seatType, gender: genderVal }));
+        }
       } else if (!hasRank) {
         const parts = [label, category, gender, ...prefParts];
         const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
@@ -635,8 +657,13 @@ export async function POST(req) {
       } else if (hasAllRequired) {
         const fieldName = APEAMCET_CATEGORY_FIELD[category]?.[gender];
         const whereFilter = fieldName ? { [fieldName]: { '$gte': retrievalMinRank } } : null;
+        const fallbackFilter = fieldName ? { [fieldName]: { '$gte': 1 } } : null;
         const parts = ['APEAMCET 2022', category, gender, `rank ${rank}`, 'eligible colleges last rank', ...prefParts];
-        ({ contextBlock } = await retrieveApeamcetContext(parts.join(' '), 40, whereFilter));
+        const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveApeamcetContext(queryStr, 40, whereFilter));
+        if (!contextBlock) {
+          ({ contextBlock } = await retrieveApeamcetContext(queryStr, 10, fallbackFilter));
+        }
       } else if (!hasRank) {
         const parts = ['APEAMCET 2022', category, gender, ...prefParts];
         const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
@@ -650,7 +677,11 @@ export async function POST(req) {
       } else if (hasAllRequired) {
         const code = KCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['KCET 2024 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
-        ({ contextBlock } = await retrieveKcetContext(parts.join(' '), 40, { rankField: code, rank: retrievalMinRank }));
+        const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveKcetContext(queryStr, 40, { rankField: code, rank: retrievalMinRank }));
+        if (!contextBlock) {
+          ({ contextBlock } = await retrieveKcetContext(queryStr, 10, { rankField: code, rank: null }));
+        }
       } else if (!hasRank) {
         const parts = ['KCET 2024 Engineering', category, ...prefParts];
         const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
@@ -664,7 +695,11 @@ export async function POST(req) {
       } else if (hasAllRequired) {
         const code = MHTCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['MHT-CET 2024 Engineering', category, `CET merit number ${rank}`, 'eligible colleges closing rank', ...prefParts];
-        ({ contextBlock } = await retrieveMhtcetContext(parts.join(' '), 40, { rankField: code, rank: retrievalMinRank }));
+        const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveMhtcetContext(queryStr, 40, { rankField: code, rank: retrievalMinRank }));
+        if (!contextBlock) {
+          ({ contextBlock } = await retrieveMhtcetContext(queryStr, 10, { rankField: code, rank: null }));
+        }
       } else if (!hasRank) {
         const parts = ['MHT-CET 2024 Engineering', category, ...prefParts];
         const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
@@ -678,8 +713,13 @@ export async function POST(req) {
       } else if (hasAllRequired) {
         const fieldName = CATEGORY_FIELD[category]?.[gender];
         const whereFilter = fieldName ? { [fieldName]: { '$gte': retrievalMinRank } } : null;
+        const fallbackFilter = fieldName ? { [fieldName]: { '$gte': 1 } } : null;
         const parts = ['TGEAPCET 2025', category, gender, `rank ${rank}`, 'eligible colleges last rank cutoff', ...prefParts];
-        ({ contextBlock } = await retrieveContext(parts.join(' '), 40, whereFilter));
+        const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock } = await retrieveContext(queryStr, 40, whereFilter));
+        if (!contextBlock) {
+          ({ contextBlock } = await retrieveContext(queryStr, 10, fallbackFilter));
+        }
       } else if (!hasRank) {
         const parts = ['TGEAPCET 2025', category, gender, ...prefParts];
         const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
@@ -735,7 +775,8 @@ export async function POST(req) {
   // Safe/Borderline table.
   const useDeterministic = !wantsAdvice && !!contextBlock && (lookupReady || (hasAllRequired && !lookupActive));
   if (useDeterministic) {
-    const isJee = exam === 'JEE' || exam === 'JEE Advanced';
+    try {
+      const isJee = exam === 'JEE' || exam === 'JEE Advanced';
       const genderLabel = genderMatters ? (gender === 'girls' ? 'Girls' : 'Boys') : '';
       const catLabel = [category, genderLabel].filter(Boolean).join(' ');
       
@@ -779,15 +820,23 @@ ${closingRule}
 
       const finalText = lookupReady
         ? buildLookupAnswer(rows, { catLabel, collegeName: target_college, branchPref: branch_preference })
-        : buildCollegeAnswer(rows, { rank, catLabel, branchPref: branch_preference });
-      const out = new TextEncoder().encode(finalText);
-      const stream = new ReadableStream({
-        start(controller) { controller.enqueue(out); controller.close(); },
-      });
-      return new Response(stream, {
-        headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
-      });
+        : buildCollegeAnswer(rows, { rank, catLabel, branchPref: branch_preference, locationPref: location_preference });
+
+      if (finalText) {
+        const out = new TextEncoder().encode(finalText);
+        const stream = new ReadableStream({
+          start(controller) { controller.enqueue(out); controller.close(); },
+        });
+        return new Response(stream, {
+          headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
+        });
+      }
+
+      // finalText is null (nothing eligible) → fall through to the conversational path.
+    } catch (err) {
+      console.error('Deterministic extraction failed, falling back to conversational:', err.message);
     }
+  }
 
     // COMPLETE PROFILE BUT NO ELIGIBLE COLLEGES (e.g. an impossibly high rank, or
     // no records for this category): answer deterministically. Without this, the

@@ -557,6 +557,8 @@ export default function ChatPage() {
     }
   }, [messages, profile, user, hydrated]);
 
+
+
   // Defer all state updates into an async callback so the effect body itself
   // never calls setState synchronously (avoids cascading-render lint, #18).
   useEffect(() => {
@@ -760,6 +762,15 @@ export default function ChatPage() {
   }, []);
 
   const sendMessage = async (text) => {
+    if (!user) {
+      const userMessageCount = messages.filter(m => m.role === 'user' && m.text).length;
+      if (userMessageCount >= 7) {
+        setForceAuthOpen(true);
+        setToast('You have reached the free message limit. Please sign in to continue.');
+        return;
+      }
+    }
+
     const userMsg = { role: 'user', text, sources: [] };
     const history = messages
       .filter(m => !m.greeting && (m.role !== 'user' || m.text))
@@ -908,6 +919,16 @@ export default function ChatPage() {
       }
     }
   };
+
+  // Enforce a 7-message limit for guests before requiring sign in
+  useEffect(() => {
+    if (user) return;
+    const userMessageCount = messages.filter(m => m.role === 'user' && m.text).length;
+    if (userMessageCount >= 7) {
+      setForceAuthOpen(true);
+      setToast('You have reached the free message limit. Please sign in to continue.');
+    }
+  }, [messages, user]);
 
   // Abort the in-flight streaming request from the "Stop" control (#12).
   const handleStop = useCallback(() => {

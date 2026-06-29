@@ -161,8 +161,10 @@ export default function LeadCaptureModal({ user, onComplete, forceOpen, onClose 
         ) : (
           // --- STEP 2: Profile Setup ---
           <>
-            <h2>Almost there! 🚀</h2>
-            <p>Please share a few more details so we can personalize your counselling experience.</p>
+            <h2 style={{ marginBottom: '8px' }}>Unlock Personalized Guidance 🚀</h2>
+            <p style={{ color: '#555', marginBottom: '20px', lineHeight: '1.5' }}>
+              We need a few details to safely save your chat history and provide college recommendations tailored specifically to you.
+            </p>
             
             <form onSubmit={handleSubmit} className={styles.leadForm}>
               
@@ -233,9 +235,17 @@ export default function LeadCaptureModal({ user, onComplete, forceOpen, onClose 
                 </select>
               </div>
               
-              <button type="submit" disabled={isSubmitting} className={styles.submitBtn}>
+              <button type="submit" disabled={isSubmitting} className={styles.submitBtn} style={{ marginTop: '8px' }}>
                 {isSubmitting ? 'Saving...' : 'Start Chatting'}
               </button>
+              
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '16px', color: '#666', fontSize: '0.85rem' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                <span><strong>100% Private.</strong> We never share your data or spam you.</span>
+              </div>
             </form>
           </>
         )}
