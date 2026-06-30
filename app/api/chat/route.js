@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
   retrieveContext, retrieveJeeContext, retrieveJeeAdvancedContext,
   retrieveApeamcetContext, retrieveKcetContext, retrieveMhtcetContext,
+  retrieveNextgenContext,
   JEE_SEAT_TYPE, JEE_GENDER,
   APEAMCET_CATEGORY_FIELD, KCET_CATEGORY_CODE, MHTCET_CATEGORY_CODE,
   tokenizeCollege,
@@ -9,6 +10,12 @@ import {
 import { SYSTEM_PROMPT } from '@/lib/system-prompt';
 import { checkRateLimit, checkGlobalBudget, MAX_PER_HOUR, GUEST_MAX_PER_HOUR } from '@/lib/ratelimit';
 import { createClient } from '@/lib/supabase/server';
+import {
+  rowCacheKey, getCachedRows, setCachedRows, rankBucket,
+  semanticGet, semanticStore, verifyGrounded, countReject, RESHAPE_ENABLED,
+  cacheMetrics,
+} from '@/lib/answer-cache';
+import { detectNextgen, formatNextgenContext } from '@/lib/nextgen';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-for-build');
 
@@ -67,6 +74,46 @@ const CATEGORY_FIELD = {
   'EWS':   { boys: 'ews_boys', girls: 'ews_girls' },
 };
 
+// Build {college, branch, closing, phase} rows DIRECTLY from the retrieved DB
+// metadata — no LLM. The closing rank is read from the real field for the
+// student's exam/category/gender, so it can't be mis-transcribed. Returns [] when
+// it can't map (the caller then falls back to the LLM row-extractor). This skips a
+// whole Gemini call on the most common turn (the college list).
+function metaToRows(exam, sources, { category, gender }) {
+  if (!Array.isArray(sources) || sources.length === 0) return [];
+  const cat = category ? String(category).toUpperCase() : null;
+  const g = gender === 'girls' ? 'girls' : 'boys';
+  const out = [];
+  for (const m of sources) {
+    if (!m) continue;
+    let college, branch, closing, phase;
+    if (exam === 'JEE' || exam === 'JEE Advanced') {
+      // Row is already filtered to the student's seat type + gender → closing_rank is theirs.
+      college = m.institute; branch = m.program; closing = Number(m.closing_rank); phase = m.round;
+    } else if (exam === 'APEAMCET') {
+      const field = APEAMCET_CATEGORY_FIELD[cat]?.[g];
+      college = m.inst_name; branch = m.branch_name; closing = field ? Number(m[field]) : NaN; phase = m.phase || 'Final';
+    } else if (exam === 'KCET') {
+      const code = KCET_CATEGORY_CODE[cat] || null;
+      college = m.college_name; branch = m.branch_name; closing = code ? Number(m[code]) : NaN; phase = m.round;
+    } else if (exam === 'MHTCET') {
+      const code = MHTCET_CATEGORY_CODE[cat] || null;
+      college = m.college_name; branch = m.branch_name; closing = code ? Number(m[code]) : NaN; phase = m.round;
+    } else {
+      // TGEAPCET (default).
+      const field = CATEGORY_FIELD[cat]?.[g];
+      college = m.inst_name; branch = m.branch_name; closing = field ? Number(m[field]) : NaN; phase = m.phase;
+    }
+    if (college && branch && Number.isFinite(closing) && closing > 0) {
+      out.push({
+        college: String(college).trim(), branch: String(branch).trim(),
+        closing: Math.trunc(closing), phase: String(phase || '').trim(),
+      });
+    }
+  }
+  return out;
+}
+
 /**
  * Semantically extract structured admission params from the full conversation.
  * Uses Gemini so it understands "backward class A", "five hundred", "she", etc.
@@ -111,13 +158,14 @@ JSON schema (null for anything not mentioned):
   "branch_preference": <plain English or null>,
   "location_preference": <city/district/institute name or null>,
   "target_college": <specific named college/university the student is asking the cutoff FOR, or null>,
-  "intent": <"list_colleges" | "advice" | "college_lookup" | "off_topic" | "smalltalk" | null>
+  "intent": <"list_colleges" | "advice" | "college_lookup" | "general_info" | "off_topic" | "smalltalk" | null>
 }
 
 Intent — classify what the LATEST message is asking for (always set it; null only if truly unclear):
 - "list_colleges" — wants the college/options list for their profile, or is giving/refining profile details to get that list (rank, category, branch, "show me", "any options?", "what can I get?").
-- "advice" — wants guidance, an opinion, or a comparison rather than a raw list: "CSE or ECE — which is better?", "is NIT Warangal good?", "should I prefer branch or college?", "what are placements like?".
+- "advice" — wants guidance, an opinion, or a comparison that depends on THEIR rank/profile: "CSE or ECE for my rank — which is better?", "is NIT Warangal good for me?", "should I prefer branch or college?".
 - "college_lookup" — asks the cutoff/admission of ONE specific named college (pairs with target_college).
+- "general_info" — a GENERAL question about the admission process or exams whose answer does NOT depend on the student's own rank/category: "what is JoSAA?", "how does TGEAPCET counselling work?", "what documents do I need?", "what is a spot round?", "explain the rounds".
 - "off_topic" — unrelated to engineering admissions (weather, math, coding, recipes, general knowledge).
 - "smalltalk" — greeting, thanks, or asking who/what you are.
 
@@ -557,6 +605,19 @@ export async function POST(req) {
     else if (/\bgender[\s-]*neutral\b|\bgn\b|\bneutral seat\b/.test(m)) resolved.gender = 'boys';
   }
 
+  // UNSTICK a named-college lookup. We persist target_college across turns so a
+  // "Can I get into IIT Bombay?" question can finish over several messages (it
+  // only triggers the lookup once category/gender are in). But once the student
+  // moves on to a general search, the inherited target must drop — otherwise
+  // every later turn keeps answering about that one college. Clear it when the
+  // current message brought no new target AND its intent is a general list/advice
+  // ask that explicitly broadens away from the specific college.
+  if (!params?.target_college && resolved.target_college &&
+      (intent === 'list_colleges' || intent === 'advice') &&
+      /\b(other|others|else|elsewhere|general|broaden|broader|different|instead|any college|other colleges|other options|more options|what else)\b/i.test(message)) {
+    resolved.target_college = null;
+  }
+
   const { rank, exam, category, gender, branch_preference, location_preference, target_college } = resolved;
 
   // NAMED-COLLEGE LOOKUP: when the student asks about a specific institute (e.g.
@@ -584,7 +645,7 @@ export async function POST(req) {
   // options the student is *just* short of — these become the "Borderline"
   // section. The model still classifies against the TRUE rank (sent in the
   // message), so Safe vs Borderline stays accurate.
-  const retrievalMinRank = (hasRank && !location_preference) ? Math.max(1, Math.floor(rank * 0.85)) : null;
+  let retrievalMinRank = (hasRank && !location_preference) ? Math.max(1, Math.floor(rank * 0.85)) : null;
 
   // Header value shared by every successful response (streaming + cache hit).
   const paramsHeader = encodeURIComponent(JSON.stringify(resolved));
@@ -602,6 +663,10 @@ export async function POST(req) {
   //    corpus hard (rank/category) before similarity ranking, otherwise we fall
   //    back to a plain semantic lookup so the model can still ground its reply.
   let contextBlock = '';
+  // Structured metadata of the retrieved rows (parallel to contextBlock). Lets the
+  // deterministic path build the college rows directly from real DB fields and skip
+  // the row-extraction LLM call entirely (it falls back to extraction if empty).
+  let retrievedSources = null;
   let contextLabel = 'TGEAPCET official data — eligible colleges only';
   const prefParts = [];
   if (branch_preference) prefParts.push(branch_preference);
@@ -619,10 +684,50 @@ export async function POST(req) {
   // A clear follow-up skips extraction (intent === null) → defaults to listing.
   const offTopic = (intent === 'off_topic' || intent === 'smalltalk') && !lookupActive;
   const wantsAdvice = intent === 'advice' && !lookupActive;
+  // A general process/exam question ("what is JoSAA?") doesn't depend on the
+  // student's rank and needs no college retrieval — route it to the conversational
+  // model (where Tier-2 cache applies) instead of a Safe/Borderline table.
+  const generalInfo = intent === 'general_info' && !lookupActive;
+
+  // NEXT-GEN COLLEGES: questions about NIAT / Scaler / Polaris / Newton / Plaksha
+  // (which admit via their OWN process, not JoSAA/state counselling) are answered
+  // from verified, sourced data injected as grounding — never the rank-cutoff path.
+  const ng = detectNextgen(message);
+  let nextgenContext = '';
+  if (ng.colleges.length) {
+    // Prefer the ingested DB (semantic match over the embeddings); fall back to the
+    // local JSON if the table/RPC isn't available. Both hold the same sourced data.
+    try {
+      const key = ng.colleges.length === 1 ? ng.colleges[0].key : null;
+      const { contextBlock } = await retrieveNextgenContext(message, 5, key);
+      nextgenContext = contextBlock || formatNextgenContext(ng.colleges);
+    } catch {
+      nextgenContext = formatNextgenContext(ng.colleges);
+    }
+  }
+
+  // TIER-1 CACHE: the deterministic "recommend colleges for my rank" path caches
+  // the extracted rows keyed by exam/category/gender/branch/rank-bucket. A later
+  // user in the same bucket reuses the real rows, and buildCollegeAnswer
+  // re-classifies Safe/Borderline against THEIR exact rank — pure code, so no
+  // hallucination. A hit skips retrieval AND the extraction LLM call.
+  const recommendDeterministic = !wantsAdvice && !generalInfo && !offTopic && !nextgenContext && hasAllRequired && !lookupActive
+    && hasRank && !location_preference;
+  const rowKey = recommendDeterministic
+    ? rowCacheKey({ exam, category, gender, branchPref: branch_preference, rank })
+    : null;
+  const cachedRows = rowKey ? await getCachedRows(rowKey) : null;
+  // On a miss we'll populate the bucket — retrieve from the bucket's BEST rank so
+  // the cached candidate set is a superset for every (higher) rank in the bucket.
+  if (recommendDeterministic && !cachedRows) {
+    retrievalMinRank = Math.max(1, Math.floor(rankBucket(rank).low * 0.85));
+  }
 
   try {
-    if (offTopic) {
-      // Intentionally leave contextBlock empty → conversational deflection path.
+    if (offTopic || generalInfo || nextgenContext || cachedRows) {
+      // Skip cutoff retrieval: off-topic → deflection; general_info → rank-
+      // independent answer; nextgenContext → answered from injected next-gen data;
+      // cachedRows → Tier-1 hit (deterministic block uses the cached rows).
     } else if (exam === 'JEE' || exam === 'JEE Advanced') {
       const isAdv = exam === 'JEE Advanced';
       const retrieve = isAdv ? retrieveJeeAdvancedContext : retrieveJeeContext;
@@ -634,96 +739,96 @@ export async function POST(req) {
         const seatType = category ? (JEE_SEAT_TYPE[String(category).toUpperCase()] || null) : null;
         const genderVal = gender ? (JEE_GENDER[gender] ?? null) : null;
         const parts = [label, target_college, category, gender, branch_preference, 'closing rank'].filter(Boolean);
-        ({ contextBlock } = await retrieve(parts.join(' '), 40, { instTokens, seatType, gender: genderVal }));
+        ({ contextBlock, sources: retrievedSources } = await retrieve(parts.join(' '), 40, { instTokens, seatType, gender: genderVal }));
       } else if (hasAllRequired) {
         const seatType = JEE_SEAT_TYPE[String(category).toUpperCase()] || null;
         const genderVal = JEE_GENDER[gender] ?? null;
         const parts = [label, category, gender, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock } = await retrieve(queryStr, 40, { rank: retrievalMinRank, seatType, gender: genderVal }));
+        ({ contextBlock, sources: retrievedSources } = await retrieve(queryStr, 40, { rank: retrievalMinRank, seatType, gender: genderVal }));
         if (!contextBlock) {
-          ({ contextBlock } = await retrieve(queryStr, 10, { rank: null, seatType, gender: genderVal }));
+          ({ contextBlock, sources: retrievedSources } = await retrieve(queryStr, 10, { rank: null, seatType, gender: genderVal }));
         }
       } else if (!hasRank) {
         const parts = [label, category, gender, ...prefParts];
         const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock } = await retrieve(query, 6));
+        ({ contextBlock, sources: retrievedSources } = await retrieve(query, 6));
       }
     } else if (exam === 'APEAMCET') {
       contextLabel = 'APEAMCET (AP EAPCET) official last-rank data — eligible colleges only';
       if (lookupActive) {
         const parts = ['APEAMCET 2022', target_college, category, gender, branch_preference, 'last rank'].filter(Boolean);
-        ({ contextBlock } = await retrieveApeamcetContext(parts.join(' '), 40, null, { instTokens }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(parts.join(' '), 40, null, { instTokens }));
       } else if (hasAllRequired) {
         const fieldName = APEAMCET_CATEGORY_FIELD[category]?.[gender];
         const whereFilter = fieldName ? { [fieldName]: { '$gte': retrievalMinRank } } : null;
         const fallbackFilter = fieldName ? { [fieldName]: { '$gte': 1 } } : null;
         const parts = ['APEAMCET 2022', category, gender, `rank ${rank}`, 'eligible colleges last rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock } = await retrieveApeamcetContext(queryStr, 40, whereFilter));
+        ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(queryStr, 40, whereFilter));
         if (!contextBlock) {
-          ({ contextBlock } = await retrieveApeamcetContext(queryStr, 10, fallbackFilter));
+          ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(queryStr, 10, fallbackFilter));
         }
       } else if (!hasRank) {
         const parts = ['APEAMCET 2022', category, gender, ...prefParts];
         const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock } = await retrieveApeamcetContext(query, 6));
+        ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(query, 6));
       }
     } else if (exam === 'KCET') {
       contextLabel = 'KCET Engineering official cutoff data — eligible colleges only';
       if (lookupActive) {
         const parts = ['KCET 2024 Engineering', target_college, category, branch_preference, 'closing rank'].filter(Boolean);
-        ({ contextBlock } = await retrieveKcetContext(parts.join(' '), 40, { instTokens }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(parts.join(' '), 40, { instTokens }));
       } else if (hasAllRequired) {
         const code = KCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['KCET 2024 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock } = await retrieveKcetContext(queryStr, 40, { rankField: code, rank: retrievalMinRank }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(queryStr, 40, { rankField: code, rank: retrievalMinRank }));
         if (!contextBlock) {
-          ({ contextBlock } = await retrieveKcetContext(queryStr, 10, { rankField: code, rank: null }));
+          ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(queryStr, 10, { rankField: code, rank: null }));
         }
       } else if (!hasRank) {
         const parts = ['KCET 2024 Engineering', category, ...prefParts];
         const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock } = await retrieveKcetContext(query, 6));
+        ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(query, 6));
       }
     } else if (exam === 'MHTCET') {
       contextLabel = 'MHT-CET Engineering official cutoff data — eligible colleges only';
       if (lookupActive) {
         const parts = ['MHT-CET 2024 Engineering', target_college, category, branch_preference, 'closing rank'].filter(Boolean);
-        ({ contextBlock } = await retrieveMhtcetContext(parts.join(' '), 40, { instTokens }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(parts.join(' '), 40, { instTokens }));
       } else if (hasAllRequired) {
         const code = MHTCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['MHT-CET 2024 Engineering', category, `CET merit number ${rank}`, 'eligible colleges closing rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock } = await retrieveMhtcetContext(queryStr, 40, { rankField: code, rank: retrievalMinRank }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(queryStr, 40, { rankField: code, rank: retrievalMinRank }));
         if (!contextBlock) {
-          ({ contextBlock } = await retrieveMhtcetContext(queryStr, 10, { rankField: code, rank: null }));
+          ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(queryStr, 10, { rankField: code, rank: null }));
         }
       } else if (!hasRank) {
         const parts = ['MHT-CET 2024 Engineering', category, ...prefParts];
         const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock } = await retrieveMhtcetContext(query, 6));
+        ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(query, 6));
       }
     } else {
       // Default: TGEAPCET (Telangana) — also covers exam === null / 'TGEAPCET'.
       if (lookupActive) {
         const parts = ['TGEAPCET 2025', target_college, category, gender, branch_preference, 'last rank cutoff'].filter(Boolean);
-        ({ contextBlock } = await retrieveContext(parts.join(' '), 40, null, { instTokens }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveContext(parts.join(' '), 40, null, { instTokens }));
       } else if (hasAllRequired) {
         const fieldName = CATEGORY_FIELD[category]?.[gender];
         const whereFilter = fieldName ? { [fieldName]: { '$gte': retrievalMinRank } } : null;
         const fallbackFilter = fieldName ? { [fieldName]: { '$gte': 1 } } : null;
         const parts = ['TGEAPCET 2025', category, gender, `rank ${rank}`, 'eligible colleges last rank cutoff', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock } = await retrieveContext(queryStr, 40, whereFilter));
+        ({ contextBlock, sources: retrievedSources } = await retrieveContext(queryStr, 40, whereFilter));
         if (!contextBlock) {
-          ({ contextBlock } = await retrieveContext(queryStr, 10, fallbackFilter));
+          ({ contextBlock, sources: retrievedSources } = await retrieveContext(queryStr, 10, fallbackFilter));
         }
       } else if (!hasRank) {
         const parts = ['TGEAPCET 2025', category, gender, ...prefParts];
         const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock } = await retrieveContext(query, 6));
+        ({ contextBlock, sources: retrievedSources } = await retrieveContext(query, 6));
       }
     }
     // Rank known but category/gender missing → no retrieval; model asks questions
@@ -748,6 +853,9 @@ export async function POST(req) {
 
   const augmentedMessage = [
     contextBlock ? `RETRIEVED CONTEXT (${contextLabel}):\n${contextBlock}` : '',
+    // Authoritative, verified info for new-age colleges — answer ONLY from this;
+    // present fees as approximate and point to the official site for exact figures.
+    nextgenContext ? `NEXT-GEN COLLEGE INFO (authoritative — answer using ONLY this; do not invent numbers; fees are approximate):\n${nextgenContext}` : '',
     profileLine,
     `USER MESSAGE:\n${message}`,
   ].filter(Boolean).join('\n\n');
@@ -773,13 +881,27 @@ export async function POST(req) {
   // An advice question routes to the conversational model even with a full
   // profile, so it gets a real answer (grounded in `contextBlock`) instead of a
   // Safe/Borderline table.
-  const useDeterministic = !wantsAdvice && !!contextBlock && (lookupReady || (hasAllRequired && !lookupActive));
+  const useDeterministic = !wantsAdvice && (!!contextBlock || !!cachedRows) && (lookupReady || (hasAllRequired && !lookupActive));
   if (useDeterministic) {
     try {
       const isJee = exam === 'JEE' || exam === 'JEE Advanced';
       const genderLabel = genderMatters ? (gender === 'girls' ? 'Girls' : 'Boys') : '';
       const catLabel = [category, genderLabel].filter(Boolean).join(' ');
-      
+
+      let rows = [];
+      if (cachedRows) {
+        // TIER-1 HIT: reuse the cached real rows; buildCollegeAnswer below
+        // re-classifies them against this user's exact rank.
+        rows = cachedRows;
+        if (timing) console.log('[cache] tier1 hit', rowKey);
+      } else {
+      // DETERMINISTIC-FIRST: build the rows straight from the retrieved DB metadata
+      // — no LLM call. Saves a Gemini round-trip on the common college-list turn and
+      // removes a transcription/hallucination surface. Falls back to the extractor
+      // only when this can't map (empty result).
+      rows = metaToRows(exam, retrievedSources, { category, gender });
+      if (timing && rows.length) console.log('[chat] rows from metadata (no extract LLM):', rows.length);
+      if (!rows.length) {
       const closingRule = isJee
         ? `- "closing" MUST be the "Closing rank" listed in the row.`
         : `- "closing" MUST be the rank listed for the student's exact category "${catLabel}". If that category has no rank for a row, skip the row.`;
@@ -800,7 +922,6 @@ Rules:
 ${closingRule}
 - Copy numbers EXACTLY from the context (digits only, no commas). Never invent. Output [] if none.`;
 
-      let rows = [];
       try {
         const r = await generateWithRetry(extractModel, extractPrompt);
         const txt = r.response.text().trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
@@ -814,6 +935,10 @@ ${closingRule}
       } catch (e) {
         console.error('College extract parse failed:', e.message);
         rows = [];
+      }
+      } // end LLM-extraction fallback
+      // TIER-1 POPULATE: cache the real rows for this bucket.
+      if (rowKey && rows.length) await setCachedRows(rowKey, rows);
       }
       mark('extract');
       if (timing) console.log('[chat] deterministic', JSON.stringify(marks));
@@ -842,7 +967,7 @@ ${closingRule}
     // no records for this category): answer deterministically. Without this, the
     // empty context falls to the conversational model, which can improvise a
     // misleading table from earlier turns in the chat history.
-    if (!offTopic && !wantsAdvice && !contextBlock && hasAllRequired && !lookupActive) {
+    if (!offTopic && !wantsAdvice && !generalInfo && !nextgenContext && !contextBlock && hasAllRequired && !lookupActive) {
       const genderLabel = genderMatters ? (gender === 'girls' ? 'Girls' : 'Boys') : '';
       const catLabel = [category, genderLabel].filter(Boolean).join(' ');
       const rankStr = Number(rank).toLocaleString('en-IN');
@@ -852,6 +977,40 @@ ${closingRule}
       return new Response(stream, {
         headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
       });
+    }
+
+    // TIER-2 CACHE (rank-independent Q&A): a general-info / smalltalk answer does
+    // not depend on the student's rank, so a high-similarity match from a prior
+    // user is reusable. Exam-scoped; served VERBATIM by default (a vetted answer
+    // reused as-is can't introduce BS). Optional reshape is fact-checked before use.
+    const cacheableQA = (intent === 'general_info' || intent === 'smalltalk');
+    if (cacheableQA) {
+      const hit = await semanticGet(exam, message);
+      if (hit) {
+        let answer = hit.answer;
+        let serve = true;
+        if (RESHAPE_ENABLED) {
+          try {
+            const reshapeModel = genAI.getGenerativeModel({
+              model: 'gemini-3.1-flash-lite',
+              generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+            });
+            const rp = `Rephrase the ANSWER to directly fit the new QUESTION. Use ONLY facts already in the ANSWER — never add a college, number, or claim that is not in it. If the QUESTION asks for something the ANSWER does not cover, reply with exactly NEEDS_FRESH.\n\nQUESTION:\n${message}\n\nANSWER:\n"""\n${hit.answer}\n"""`;
+            const reshaped = (await generateWithRetry(reshapeModel, rp)).response.text().trim();
+            if (/NEEDS_FRESH/.test(reshaped)) serve = false;                 // cache doesn't fit → fresh
+            else if (reshaped && verifyGrounded(reshaped, hit.answer)) answer = reshaped;
+            else countReject();                                              // reshape invented facts → verbatim
+          } catch { /* reshape failed → verbatim */ }
+        }
+        if (serve) {
+          if (timing) console.log('[cache] tier2 hit', { exam, score: hit.score });
+          const out = new TextEncoder().encode(answer);
+          const stream = new ReadableStream({ start(c) { c.enqueue(out); c.close(); } });
+          return new Response(stream, {
+            headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8', 'X-Cache': 'tier2' }),
+          });
+        }
+      }
     }
 
     // Conversational path (asking for a missing detail, off-topic, etc.) — stream.
@@ -870,11 +1029,13 @@ ${closingRule}
       async start(controller) {
         const encoder = new TextEncoder();
         let first = true;
+        let full = '';
         try {
           for await (const chunk of geminiStream.stream) {
             const text = chunk.text();
             if (text) {
               if (first) { first = false; mark('first_token'); if (timing) console.log('[chat] first_token', marks.first_token + 'ms'); }
+              full += text;
               controller.enqueue(encoder.encode(text));
             }
           }
@@ -883,6 +1044,8 @@ ${closingRule}
           controller.enqueue(encoder.encode('\n\n_Sorry — something went wrong while generating the response. Please try again._'));
         } finally {
           controller.close();
+          // TIER-2 POPULATE: cache the freshly-generated rank-independent answer.
+          if (cacheableQA && full.trim().length > 40) semanticStore(exam, message, full).catch(() => {});
         }
       },
     });
@@ -894,4 +1057,11 @@ ${closingRule}
     console.error('Server error:', error);
     return errorResponse(500, 'server_error', 'An unexpected error occurred. Please try again.');
   }
+}
+
+// Observability (Phase 3): GET /api/chat returns answer-cache hit rates so the
+// cache can be monitored. Watch tier2.rejectRate — a rising value means reshape
+// is inventing facts (the BS canary) and should be tightened or disabled.
+export async function GET() {
+  return Response.json({ cache: cacheMetrics() });
 }

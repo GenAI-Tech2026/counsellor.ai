@@ -796,6 +796,11 @@ export default function ChatPage() {
           gender: profile.gender ?? null,
           branch_preference: profile.branch_preference ?? null,
           location_preference: profile.location_preference ?? null,
+          // Carry the named-college target across turns: a "Can I get into IIT
+          // Bombay?" question often completes over several messages (category,
+          // then gender) — without this the lookup target is lost and the bot
+          // falls back to a generic list instead of answering about that college.
+          target_college: profile.target_college ?? null,
         }
       : null;
 
@@ -1575,6 +1580,33 @@ export default function ChatPage() {
           )}
           {/* Quick-reply question popover, rising from the input bar. */}
           {chatQuestionPopup}
+          {/* Always-visible NIAT pin — anchored just above the composer so it
+              stays at the bottom of the chat at all times. Taps open the same
+              grounded NIAT overview the recommendation cards use. */}
+          <button
+            type="button"
+            onClick={() => askCollege(TOPPER_COLLEGES[0])}
+            disabled={busy}
+            aria-label="Explore NIAT — NxtWave Institute of Advanced Technologies"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+              margin: '0 0 8px', padding: '9px 12px', borderRadius: 12,
+              border: '1px solid rgba(255,122,0,0.28)',
+              background: 'linear-gradient(90deg, rgba(255,122,0,0.12), rgba(255,122,0,0.03))',
+              cursor: busy ? 'default' : 'pointer', textAlign: 'left',
+            }}
+          >
+            <Sparkles size={16} style={{ color: '#ff7a00', flexShrink: 0 }} />
+            <span style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+              <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--ink)' }}>
+                NIAT — Industry-built 4-year CS
+              </span>
+              <span style={{ fontSize: '0.74rem', color: 'var(--muted, #6b7280)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                NxtWave Institute of Advanced Technologies · Hyderabad · tap to explore
+              </span>
+            </span>
+            <ArrowRight size={15} style={{ color: '#ff7a00', flexShrink: 0 }} />
+          </button>
           {composer}
           {rateHint}
         </footer>

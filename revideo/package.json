@@ -1,0 +1,20 @@
+{
+  "name": "counsa-revideo",
+  "private": true,
+  "type": "module",
+  "description": "Open-source (Revideo) recreation of the counsa.ai product video — renders to ../public/product-video.mp4",
+  "scripts": {
+    "dev": "vite",
+    "render": "node src/render.mjs"
+  },
+  "dependencies": {
+    "@revideo/2d": "0.10.4",
+    "@revideo/core": "0.10.4",
+    "@revideo/ffmpeg": "0.10.4",
+    "@revideo/renderer": "0.10.4"
+  },
+  "devDependencies": {
+    "@revideo/vite-plugin": "0.10.4",
+    "vite": "^5.4.0"
+  }
+}
