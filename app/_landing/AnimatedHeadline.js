@@ -33,6 +33,8 @@ export default function AnimatedHeadline({ segments, className }) {
             whiteSpace: 'pre',
             overflow: 'hidden',
             verticalAlign: 'top',
+            lineHeight: 1.08,
+            paddingBottom: '0.14em',
           }}
         >
           <span

@@ -1,0 +1,43 @@
+/* The scroll-drawn "guiding thread" — a single amber line that threads down
+   the page in the left gutter, draws itself as you scroll, lights milestone
+   nodes, and trails a glowing comet at its tip. */
+
+.svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 96px;
+  z-index: 40;
+  pointer-events: none;
+  overflow: visible;
+}
+.track { fill: none; stroke: rgba(243, 91, 4, 0.13); stroke-width: 2.5; stroke-linecap: round; }
+.draw {
+  fill: none; stroke: url(#threadGrad); stroke-width: 3; stroke-linecap: round;
+  filter: drop-shadow(0 0 5px rgba(243, 91, 4, 0.55));
+}
+
+/* milestone nodes */
+.node { fill: #fff; stroke: rgba(243, 91, 4, 0.3); stroke-width: 2; transition: fill 0.4s, stroke 0.4s; }
+.nodeOn { fill: #f35b04; stroke: #ff9a3d; }
+.ring { fill: none; stroke: #f35b04; stroke-width: 2; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.ringOn { animation: ring 1.8s ease-out infinite; }
+@keyframes ring { 0% { opacity: 0.55; transform: scale(1); } 80%, 100% { opacity: 0; transform: scale(2.6); } }
+
+.num { font: 800 11px var(--font-sans); fill: #fff; text-anchor: middle; dominant-baseline: central; opacity: 0; transition: opacity 0.4s; }
+.numOn { opacity: 1; }
+.label {
+  font: 800 12px var(--font-sans); fill: #b9785a; letter-spacing: 0.01em;
+  opacity: 0; transform: translateX(-6px); transition: opacity 0.5s, transform 0.5s;
+}
+.labelOn { opacity: 1; transform: none; }
+
+/* comet at the drawing tip */
+.comet { fill: #f35b04; filter: drop-shadow(0 0 10px rgba(243, 91, 4, 0.95)); }
+.cometCore { fill: #fff; }
+
+@media (max-width: 1080px) { .svg { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .ringOn { animation: none; }
+  .comet { display: none; }
+}

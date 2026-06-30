@@ -9,6 +9,10 @@ import Reveal from './_landing/Reveal';
 import AnimatedHeadline from './_landing/AnimatedHeadline';
 import HeroShowcase from './_landing/HeroShowcase';
 import EmailCta from './_landing/EmailCta';
+import Coverage from './_landing/Coverage';
+import Stats from './_landing/Stats';
+import IndiaMap from './_landing/IndiaMap';
+import ScrollThread from './_landing/ScrollThread';
 import { AlwaysOnMock, DataMock, MatchMock, ProfileMock } from './_landing/Mockups';
 
 export const metadata = {
@@ -60,68 +64,82 @@ const TESTIMONIALS = [
   { q: 'Asked it the same doubt five different ways at 1 AM. Never got tired, never gave me a wrong cutoff. This is the future.', name: 'Aarav M.', who: 'Student · Pune' },
 ];
 
+const THREAD = [
+  { id: 'hero', num: '1', label: 'Your rank' },
+  { id: 'coverage', num: '2', label: 'Pick your exam' },
+  { id: 'intent', num: '3', label: 'Ask anything' },
+  { id: 'features', num: '4', label: 'Get matched' },
+  { id: 'trust', num: '5', label: 'Trusted data' },
+  { id: 'cta', num: '6', label: 'Your shortlist' },
+];
+
 export default function Home() {
   return (
     <div className={styles.page}>
       <Nav />
+      <ScrollThread nodes={THREAD} />
       <main className={styles.main}>
 
         {/* ───────────────────────── HERO ───────────────────────── */}
-        <header className={styles.hero}>
+        <header id="hero" className={styles.hero}>
           <span className={`${styles.heroBlob} ${styles.heroBlobA}`} aria-hidden="true" />
           <span className={`${styles.heroBlob} ${styles.heroBlobB}`} aria-hidden="true" />
           <div className={styles.wrap}>
-            <div className={styles.heroGrid}>
-              <div className={styles.heroCopy}>
-                <span className={styles.badge}><i><Sparkles size={13} /></i> AI admission counselling</span>
-                <AnimatedHeadline
-                  className={styles.heroTitle}
-                  segments={['Know exactly where your', { accent: 'rank' }, 'can take you.']}
-                />
-                <p className={styles.heroLede}>
-                  Tell counsa your exam, rank and category. It reads the official cutoffs and shows the
-                  colleges genuinely within your reach — in seconds.
-                </p>
-                <div className={styles.heroActions}>
-                  <Link href="/chat" className={`${styles.btn} ${styles.btnPrimary}`}>Start chatting <ArrowRight size={18} /></Link>
-                  <a href="#how" className={`${styles.btn} ${styles.btnGhost}`}>See how it works</a>
-                </div>
-                <p className={styles.heroNote}><Check size={16} color="var(--success)" /> Free to start — <b>no sign-up needed</b> to ask your first question.</p>
+            <div className={styles.heroCopy}>
+              <span className={styles.badge}><i><Sparkles size={13} /></i> AI admission counselling</span>
+              <AnimatedHeadline
+                className={styles.heroTitle}
+                segments={['Know exactly where your', { accent: 'rank' }, 'can take you.']}
+              />
+              <p className={styles.heroLede}>
+                Tell counsa your exam, rank and category. It reads the official cutoffs and shows the
+                colleges genuinely within your reach — in seconds.
+              </p>
+              <div className={styles.heroActions}>
+                <Link href="/chat" className={`${styles.btn} ${styles.btnMesh}`}>Start chatting <ArrowRight size={18} /></Link>
               </div>
-              <HeroShowcase />
+              <p className={styles.heroNote}><Sparkles size={15} color="var(--accent)" /> Free to start · no sign-up · your shortlist in <b>~2 minutes</b></p>
             </div>
           </div>
         </header>
 
-        {/* ─────────────────────── COVERAGE ─────────────────────── */}
-        <section id="coverage" className={styles.coverage}>
-          <p className={styles.coverLabel}>Covering India&apos;s major engineering entrance exams</p>
-          <div className={styles.marquee}>
-            <div className={styles.marqueeTrack}>
-              {[...EXAMS, ...EXAMS, ...EXAMS].map((e, i) => <span key={i}>{e}</span>)}
-            </div>
+        {/* ─────────────── HERO SHOWCASE (full-bleed band) ─────────────── */}
+        <section className={styles.showcaseBand} aria-label="A preview of the counsellor">
+          <div className={styles.showcaseBandInner}>
+            <HeroShowcase />
           </div>
         </section>
 
+        {/* ─────────────────────── COVERAGE ─────────────────────── */}
+        <div id="coverage"><Coverage /></div>
+
+        {/* ─────────────────────── STATS ─────────────────────────── */}
+        <section className={styles.statsSection}>
+          <div className={styles.wrap}><Stats /></div>
+        </section>
+
         {/* ──────────────────── INTENT / LIVE GRID ──────────────── */}
-        <section className={`${styles.section} ${styles.intent}`}>
+        <section id="intent" className={`${styles.section} ${styles.intent}`}>
           <div className={styles.wrap}>
             <Reveal className={`${styles.sectionHead} ${styles.center}`}>
-              <span className={styles.eyebrow}><Zap size={14} /> Help the moment you need it</span>
+              <span className={styles.eyebrow}><Zap size={14} /> Works across every state</span>
               <h2 className={styles.h2}>Real questions. Grounded answers. Right now.</h2>
-              <p className={styles.lede}>Students ask counsa thousands of rank-specific questions — the kind that used to need an expensive counsellor and a week of waiting.</p>
+              <p className={styles.lede}>Students across India ask counsa rank-specific questions — the kind that used to need an expensive counsellor and a week of waiting.</p>
             </Reveal>
-            <div className={styles.cardsGrid}>
-              {QUERIES.map((q, i) => (
-                <Reveal key={q.name} className={styles.queryCard} delay={i * 110}>
-                  <div className={styles.queryHead}>
-                    <span className={styles.avatar} style={{ background: q.c }}>{q.i}</span>
-                    <div><b>{q.name}</b><small>{q.who}</small></div>
-                  </div>
-                  <p className={styles.queryText}>{q.q}</p>
-                  <span className={styles.queryTag}><Check size={13} /> {q.tag}</span>
-                </Reveal>
-              ))}
+            <div className={styles.intentGrid}>
+              <Reveal className={styles.mapCol}><IndiaMap /></Reveal>
+              <div className={styles.feedCol}>
+                {QUERIES.map((q, i) => (
+                  <Reveal key={q.name} className={styles.queryCard} delay={i * 110}>
+                    <div className={styles.queryHead}>
+                      <span className={styles.avatar} style={{ background: q.c }}>{q.i}</span>
+                      <div><b>{q.name}</b><small>{q.who}</small></div>
+                    </div>
+                    <p className={styles.queryText}>{q.q}</p>
+                    <span className={styles.queryTag}><Check size={13} /> {q.tag}</span>
+                  </Reveal>
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -206,7 +224,7 @@ export default function Home() {
         </section>
 
         {/* ───────────────────────── CTA ────────────────────────── */}
-        <section className={`${styles.section} ${styles.cta}`}>
+        <section id="cta" className={`${styles.section} ${styles.cta}`}>
           <div className={styles.wrap}>
             <Reveal className={styles.ctaInner}>
               <h2 className={styles.ctaTitle}>Find your college with <em>confidence.</em></h2>

@@ -10,17 +10,26 @@ const COLLEGES = [
   { tag: 'N', name: 'NIT Raipur', branch: 'Information Technology', pct: '96% fit' },
 ];
 
-// phases: 0 user msg, 1 typing, 2 bot reply, 3 colleges rise
+// phases: 0 user msg, 1 typing, 2 bot reply, 3 colleges rise — then loops
+const STEPS = [
+  { phase: 0, dur: 1200 },
+  { phase: 1, dur: 1200 },
+  { phase: 2, dur: 900 },
+  { phase: 3, dur: 4200 },
+];
+
 export default function HeroShowcase() {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
-    const timers = [
-      setTimeout(() => setPhase(1), 900),
-      setTimeout(() => setPhase(2), 2100),
-      setTimeout(() => setPhase(3), 2700),
-    ];
-    return () => timers.forEach(clearTimeout);
+    let i = 0, t, running = true;
+    const run = () => {
+      if (!running) return;
+      setPhase(STEPS[i].phase);
+      t = setTimeout(() => { i = (i + 1) % STEPS.length; run(); }, STEPS[i].dur);
+    };
+    run();
+    return () => { running = false; clearTimeout(t); };
   }, []);
 
   return (
