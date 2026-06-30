@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { useState, useEffect } from 'react';
+import { motion, useScroll, useTransform, useMotionValueEvent, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
 import { ArrowRight, GraduationCap, Sparkles, MessageSquare, Database, Search, CheckCircle2 } from 'lucide-react';
 
 function Typewriter({ text, delay = 0, speed = 30 }) {
@@ -22,6 +22,58 @@ function Typewriter({ text, delay = 0, speed = 30 }) {
   }, [text, delay, speed]);
   return <>{displayedText}</>;
 }
+
+const Word = ({ children, progress, range }) => {
+  const color = useTransform(progress, range, ["#4a4a4a", "#ffffff"]);
+  return (
+    <motion.span style={{ color }}>
+      {children}
+    </motion.span>
+  );
+};
+
+function ScrollStatement() {
+  const containerRef = useRef(null);
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start 75%", "end 25%"]
+  });
+
+  const text = "Say goodbye to giant cutoff PDFs, and stop guessing your admission chances.";
+  const words = text.split(" ");
+
+  return (
+    <section ref={containerRef} className={styles.asymmetricSection}>
+      <div className={styles.asymmetricContainer}>
+        <h2 className={styles.asymmetricLargeText}>
+          {words.map((word, i) => {
+            const start = i / words.length;
+            const end = start + (1 / words.length);
+            return (
+              <span key={i}>
+                <Word progress={scrollYProgress} range={[start, end]}>
+                  {word}
+                </Word>
+                {' '}
+              </span>
+            );
+          })}
+        </h2>
+        
+        <motion.p 
+          className={styles.asymmetricSmallText}
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.6, delay: 0.2 }}
+        >
+          We don't just provide raw data. We process category, gender, and local area reservations to give you instant, accurate college predictions for choice filling.
+        </motion.p>
+      </div>
+    </section>
+  );
+}
+
 import styles from './page.module.css';
 
 const fadeUp = {
@@ -95,10 +147,8 @@ export default function Home() {
           <div className={styles.heroUiMockup} style={{flexDirection: 'column', padding: '0', textAlign: 'left'}}>
             {/* Chat Header */}
             <div style={{borderBottom: '1px solid #eee', padding: '1rem', background: '#fafafa', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600'}}>
-              <div style={{background: '#ff7e5f', padding: '6px', borderRadius: '6px', color: 'white'}}>
-                <GraduationCap size={16} />
-              </div>
-              Counsellor AI
+              <img src="/branding/counsa_logo_mini.png" alt="Counsa.ai Logo" style={{height: '24px', width: 'auto', borderRadius: '4px'}} />
+              Counsa.ai
             </div>
             {/* Chat Body */}
             <div style={{padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1, background: '#fff'}}>
@@ -106,26 +156,26 @@ export default function Home() {
               <motion.div 
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5, delay: 1 }}
+                transition={{ duration: 0.4, delay: 0.5 }}
                 style={{alignSelf: 'flex-end', background: '#f0f0f0', padding: '0.8rem 1rem', borderRadius: '12px 12px 0 12px', fontSize: '0.9rem', maxWidth: '80%', minHeight: '44px'}}
               >
-                <Typewriter text="I got 15,200 rank in TGEAPCET, category BC-B, male. Can I get CSE in Hyderabad?" delay={1200} speed={30} />
+                <Typewriter text="I got 15,200 rank in TGEAPCET, category BC-B, male. Can I get CSE in Hyderabad?" delay={600} speed={20} />
               </motion.div>
               {/* AI Message */}
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5, delay: 4.0 }}
+                transition={{ duration: 0.4, delay: 2.2 }}
                 style={{alignSelf: 'flex-start', background: '#fff5eb', padding: '0.8rem 1rem', borderRadius: '12px 12px 12px 0', fontSize: '0.9rem', maxWidth: '80%', border: '1px solid #ffe4cc', minHeight: '60px'}}
               >
                 <div style={{fontWeight: 'bold', marginBottom: '0.5rem', color: '#ff7e5f', display: 'flex', alignItems: 'center', gap: '4px'}}>
                   <Sparkles size={14} /> AI Analysis
                 </div>
-                <Typewriter text="Based on the 2024 cutoff data, here are the top colleges for CSE where you are eligible:" delay={4200} speed={25} />
+                <Typewriter text="Based on the 2024 cutoff data, here are the top colleges for CSE where you are eligible:" delay={2400} speed={15} />
                 <motion.ul 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ delay: 6.5, duration: 0.5 }}
+                  transition={{ delay: 3.8, duration: 0.4 }}
                   style={{marginTop: '0.5rem', paddingLeft: '1.2rem', lineHeight: '1.6'}}
                 >
                   <li>CBIT, Gandipet (Last rank: 16,050)</li>
@@ -140,30 +190,33 @@ export default function Home() {
       </section>
 
       {/* Logos */}
-      <motion.section 
-        className={styles.logos}
-        initial={{ opacity: 0 }}
-        whileInView={{ opacity: 0.8 }}
-        viewport={{ once: true }}
-      >
-        <div className={styles.logoItem} style={{fontSize: '1.5rem'}}>JEE Main</div>
-        <div className={styles.logoItem} style={{fontSize: '1.5rem'}}>JEE Advanced</div>
-        <div className={styles.logoItem} style={{fontSize: '1.5rem'}}>TGEAPCET</div>
-        <div className={styles.logoItem} style={{fontSize: '1.5rem'}}>APEAMCET</div>
-        <div className={styles.logoItem} style={{fontSize: '1.5rem'}}>KCET</div>
-        <div className={styles.logoItem} style={{fontSize: '1.5rem'}}>MHTCET</div>
-      </motion.section>
+      <section className={styles.logos}>
+        <div className={styles.logosTitle}>Supported Examinations</div>
+        <div className={styles.marqueeContainer}>
+          <div className={styles.marqueeTrack}>
+            {[
+              'JEE Main', 'JEE Advanced', 'BITSAT', 'VITEEE', 'SRMJEEE', 'COMEDK', 
+              'WBJEE', 'MHTCET', 'KCET', 'TGEAPCET', 'APEAMCET', 'GUJCET', 'CUET', 'NEET'
+            ].map((exam, i) => (
+              <div key={`exam-1-${i}`} className={styles.logoItem}>
+                <CheckCircle2 size={18} />
+                {exam}
+              </div>
+            ))}
+            {[
+              'JEE Main', 'JEE Advanced', 'BITSAT', 'VITEEE', 'SRMJEEE', 'COMEDK', 
+              'WBJEE', 'MHTCET', 'KCET', 'TGEAPCET', 'APEAMCET', 'GUJCET', 'CUET', 'NEET'
+            ].map((exam, i) => (
+              <div key={`exam-2-${i}`} className={styles.logoItem}>
+                <CheckCircle2 size={18} />
+                {exam}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-      <motion.section 
-        className={styles.fullScreenStatement}
-        initial={{ opacity: 0, scale: 0.95 }}
-        whileInView={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.8 }}
-        viewport={{ once: true, margin: "0px" }}
-      >
-        <p className={styles.statementLabel}>Powered by verified data</p>
-        <h2 className={styles.statementTitle}>Say goodbye to giant cutoff PDFs</h2>
-      </motion.section>
+      <ScrollStatement />
 
       {/* Features */}
       <section className={styles.section}>
@@ -287,10 +340,10 @@ export default function Home() {
           </motion.div>
           <motion.div variants={fadeUp} className={styles.secCard}>
             <div className={styles.secIconWrap}>
-               <Sparkles size={48} />
+               <GraduationCap size={48} />
             </div>
-            <h4 className={styles.secTitle}>Powered by Gemini</h4>
-            <p className={styles.secDesc}>Uses state-of-the-art LLMs to understand complex queries and constraints.</p>
+            <h4 className={styles.secTitle}>Made by IITians</h4>
+            <p className={styles.secDesc}>Built by engineers who have cracked the toughest exams and know exactly what students need.</p>
           </motion.div>
           <motion.div variants={fadeUp} className={styles.secCard}>
             <div className={styles.secIconWrap}>
@@ -302,47 +355,6 @@ export default function Home() {
         </motion.div>
       </section>
 
-      {/* Testimonials */}
-      <section className={styles.section}>
-        <motion.div 
-          className={styles.sectionCenter}
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-        >
-          <h2 className={styles.sectionTitle}>Success Stories</h2>
-        </motion.div>
-
-        <motion.div 
-          className={styles.testimonials}
-          variants={staggerContainer}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-        >
-          <motion.div variants={fadeUp} className={styles.testimonialCard} style={{backgroundImage: 'url(https://i.pravatar.cc/300?img=11)'}}>
-             <div className={styles.testimonialContent}>
-               <div style={{marginBottom: '1rem', fontStyle: 'italic'}}>"I thought I wouldn't get into a top 10 college with my rank, but the AI found a specific branch I was eligible for!"</div>
-               <div className={styles.tName}>Rahul S.</div>
-               <div className={styles.tRole}>TGEAPCET Rank: 18k</div>
-             </div>
-          </motion.div>
-          <motion.div variants={fadeUp} className={styles.testimonialCard} style={{backgroundImage: 'url(https://i.pravatar.cc/300?img=12)'}}>
-             <div className={styles.testimonialContent}>
-               <div style={{marginBottom: '1rem', fontStyle: 'italic'}}>"Much better than paying ₹5000 to human counsellors. It gave me exactly the list I needed for choice filling."</div>
-               <div className={styles.tName}>Priya M.</div>
-               <div className={styles.tRole}>Secured CSE at VNR VJIET</div>
-             </div>
-          </motion.div>
-          <motion.div variants={fadeUp} className={styles.testimonialCard} style={{backgroundImage: 'url(https://i.pravatar.cc/300?img=13)'}}>
-             <div className={styles.testimonialContent}>
-               <div style={{marginBottom: '1rem', fontStyle: 'italic'}}>"The way it handles category and local area reservations is flawless. Saved me hours of PDF scrolling."</div>
-               <div className={styles.tName}>Karthik Reddy</div>
-               <div className={styles.tRole}>APEAMCET Aspirant</div>
-             </div>
-          </motion.div>
-        </motion.div>
-      </section>
 
       {/* Bottom CTA */}
       <motion.section 
