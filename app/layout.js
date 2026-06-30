@@ -1,9 +1,9 @@
-import { DM_Sans } from "next/font/google";
+import { Geist } from "next/font/google";
 import "./globals.css";
 
-// Use DM Sans for both body and display for a cohesive, modern premium look.
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
+// Use Geist for both body and display for a cohesive, modern premium look.
+const geist = Geist({
+  variable: "--font-geist",
   subsets: ["latin"],
   display: "swap",
   weight: ["400", "500", "600", "700"],
@@ -29,7 +29,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${dmSans.variable}`}>
+    <html lang="en" className={`${geist.variable}`}>
       <body>{children}</body>
     </html>
   );
