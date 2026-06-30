@@ -27,7 +27,7 @@
   padding-inline: clamp(20px, 5vw, 64px);
 }
 
-.section { position: relative; padding-block: clamp(80px, 11vw, 168px); }
+.section { position: relative; padding-block: clamp(68px, 8vw, 124px); }
 
 .eyebrow {
   display: inline-flex;
@@ -40,7 +40,7 @@
   color: var(--accent-press);
 }
 
-.sectionHead { max-width: 720px; margin-bottom: clamp(40px, 5vw, 72px); }
+.sectionHead { max-width: 760px; margin-bottom: clamp(30px, 4vw, 56px); }
 .sectionHead.center { margin-inline: auto; text-align: center; }
 
 .h2 {
@@ -284,12 +284,12 @@
    ════════════════════════════════════════════════════════════ */
 .featureRow {
   display: grid; grid-template-columns: 1fr 1fr; gap: clamp(32px, 5vw, 96px); align-items: center;
-  min-height: 90vh; padding-block: clamp(40px, 6vw, 64px);
+  min-height: 76vh; padding-block: clamp(36px, 5vw, 56px);
 }
 .featArt { width: 100%; }
 .featureRow.reverse .featCopy { order: 2; }
 .featureRow.reverse .featArt { order: 1; }
-.featCopy h3 { font-size: clamp(1.7rem, 3vw, 2.5rem); line-height: 1.06; letter-spacing: -0.03em; font-weight: 700; color: var(--ink-hero); margin-top: 16px; }
+.featCopy h3 { font-family: var(--font-serif); font-size: clamp(1.8rem, 3.2vw, 2.7rem); line-height: 1.08; letter-spacing: -0.02em; font-weight: 600; color: var(--ink-hero); margin-top: 14px; }
 .featCopy p { margin-top: 18px; font-size: 1.1rem; line-height: 1.6; color: var(--ink-soft); max-width: 46ch; }
 .featList { margin-top: 22px; display: flex; flex-direction: column; gap: 12px; }
 .featList li { display: flex; align-items: center; gap: 11px; font-size: 1rem; color: var(--ink); list-style: none; }
@@ -314,7 +314,7 @@
 .trioCard { padding: 30px; border-radius: 22px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.09); transition: transform .4s cubic-bezier(.2,.8,.2,1), background .3s, border-color .3s; }
 .trioCard:hover { transform: translateY(-6px); background: rgba(255,255,255,.07); border-color: rgba(255,154,77,.4); }
 .trioIcon { width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent-hover), var(--accent-press)); color: #fff; margin-bottom: 20px; box-shadow: 0 12px 28px -10px rgba(243,91,4,.7); }
-.trioCard h3 { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.02em; }
+.trioCard h3 { font-family: var(--font-serif); font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; }
 .trioCard p { margin-top: 12px; font-size: .98rem; line-height: 1.55; color: rgba(255,255,255,.62); }
 .badgeRow { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; }
 .miniBadge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 15px; border-radius: 999px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); font-size: .82rem; font-weight: 600; color: rgba(255,255,255,.85); }

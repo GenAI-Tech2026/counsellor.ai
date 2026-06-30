@@ -19,7 +19,7 @@ export default function ScrollThread({ nodes }) {
 
   // ── Measure the path + node points from the DOM ──
   useEffect(() => {
-    const X1 = 30, X2 = 66;
+    const X1 = 28, X2 = 58;
     const measure = () => {
       const total = document.body.scrollHeight;
       const pts = nodes.map((n, i) => {
@@ -115,7 +115,8 @@ export default function ScrollThread({ nodes }) {
 
       {geo.d && (
         <g ref={cometRef} className={s.comet}>
-          <circle r="6" />
+          <circle className={s.cometHalo} r="12" />
+          <circle className={s.cometBody} r="6" />
           <circle className={s.cometCore} r="2.5" />
         </g>
       )}
