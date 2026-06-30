@@ -245,6 +245,36 @@
   margin-bottom: 1rem;
 }
 
+.fullScreenStatement {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 2rem;
+  background: radial-gradient(circle at center, rgba(255,126,95,0.08) 0%, transparent 60%);
+  margin: 4rem 0;
+}
+
+.statementLabel {
+  color: #ff5757;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-size: 1.1rem;
+  margin-bottom: 1.5rem;
+}
+
+.statementTitle {
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 5.5rem;
+  line-height: 1.05;
+  font-weight: 400;
+  max-width: 1000px;
+  letter-spacing: -2px;
+}
+
 .featureSplit {
   display: flex;
   align-items: center;
@@ -481,6 +511,9 @@
   }
   .title {
     font-size: 3rem;
+  }
+  .statementTitle {
+    font-size: 3.5rem;
   }
   .nav {
     display: none;

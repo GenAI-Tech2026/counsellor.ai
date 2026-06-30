@@ -50,8 +50,8 @@ export default function Home() {
         transition={{ duration: 0.5 }}
       >
         <div className={styles.logo}>
-          <img src="/branding/counsa_logo_mini.png" alt="Counsellor.ai Logo" style={{height: '28px', width: 'auto', borderRadius: '4px'}} />
-          counsellor.ai
+          <img src="/branding/counsa_logo_mini.png" alt="Counsa.ai Logo" style={{height: '28px', width: 'auto', borderRadius: '4px'}} />
+          Counsa.ai
         </div>
         <nav className={styles.nav}>
           <Link href="#">Exams</Link>
@@ -154,15 +154,16 @@ export default function Home() {
         <div className={styles.logoItem} style={{fontSize: '1.5rem'}}>MHTCET</div>
       </motion.section>
 
-      <motion.div 
-        className={styles.sectionCenter}
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-100px" }}
+      <motion.section 
+        className={styles.fullScreenStatement}
+        initial={{ opacity: 0, scale: 0.95 }}
+        whileInView={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.8 }}
+        viewport={{ once: true, margin: "0px" }}
       >
-        <p className={styles.featureLabel}>Powered by verified data</p>
-        <h2 className={styles.sectionTitle}>Say goodbye to giant cutoff PDFs</h2>
-      </motion.div>
+        <p className={styles.statementLabel}>Powered by verified data</p>
+        <h2 className={styles.statementTitle}>Say goodbye to giant cutoff PDFs</h2>
+      </motion.section>
 
       {/* Features */}
       <section className={styles.section}>
@@ -267,7 +268,7 @@ export default function Home() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
         >
-          <h2 className={styles.sectionTitle}>Why students trust counsellor.ai</h2>
+          <h2 className={styles.sectionTitle}>Why students trust Counsa.ai</h2>
         </motion.div>
 
         <motion.div 
@@ -369,10 +370,10 @@ export default function Home() {
       <footer className={styles.footer}>
         <div>
           <div className={styles.logo} style={{marginBottom: '1rem'}}>
-            <img src="/branding/counsa_logo_mini.png" alt="Counsellor.ai Logo" style={{height: '28px', width: 'auto', borderRadius: '4px'}} />
-            counsellor.ai
+            <img src="/branding/counsa_logo_mini.png" alt="Counsa.ai Logo" style={{height: '28px', width: 'auto', borderRadius: '4px'}} />
+            Counsa.ai
           </div>
-          <p style={{color: '#666', fontSize: '0.9rem'}}>© 2026 Counsellor.ai<br/>Built for engineering aspirants.</p>
+          <p style={{color: '#666', fontSize: '0.9rem'}}>© 2026 Counsa.ai<br/>Built for engineering aspirants.</p>
         </div>
         <div className={styles.footerLinks}>
           <div className={styles.footerCol}>
