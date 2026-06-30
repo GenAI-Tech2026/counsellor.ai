@@ -264,9 +264,10 @@
    FEATURE BLOCKS
    ════════════════════════════════════════════════════════════ */
 .featureRow {
-  display: grid; grid-template-columns: 1fr 1fr; gap: clamp(32px, 5vw, 88px); align-items: center;
-  padding-block: clamp(40px, 6vw, 80px);
+  display: grid; grid-template-columns: 1fr 1fr; gap: clamp(32px, 5vw, 96px); align-items: center;
+  min-height: 90vh; padding-block: clamp(40px, 6vw, 64px);
 }
+.featArt { width: 100%; }
 .featureRow.reverse .featCopy { order: 2; }
 .featureRow.reverse .featArt { order: 1; }
 .featCopy h3 { font-size: clamp(1.7rem, 3vw, 2.5rem); line-height: 1.06; letter-spacing: -0.03em; font-weight: 700; color: var(--ink-hero); margin-top: 16px; }
@@ -360,7 +361,7 @@
   .cardsGrid { grid-template-columns: 1fr; }
   .trioGrid { grid-template-columns: 1fr; }
   .tGrid { grid-template-columns: 1fr; }
-  .featureRow { grid-template-columns: 1fr; gap: 36px; }
+  .featureRow { grid-template-columns: 1fr; gap: 36px; min-height: auto; }
   .featureRow.reverse .featCopy { order: 1; }
   .featureRow.reverse .featArt { order: 2; }
   .footTop { grid-template-columns: 1fr 1fr; gap: 32px; }
