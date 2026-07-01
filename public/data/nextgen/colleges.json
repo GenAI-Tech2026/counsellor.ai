@@ -1,0 +1,134 @@
+{
+  "_meta": {
+    "description": "New-age / next-gen tech colleges that admit through their OWN application process (NOT JoSAA or state counselling). Data compiled from each college's official site and reputable Indian education aggregators (Shiksha, CollegeDunia, CollegeDekho, Careers360, KollegeApply). Fee figures vary across sources and by partner campus/cohort — they are recorded as approximate ranges and should be confirmed on the official site. No figure here is invented; where sources disagreed, the range is given.",
+    "compiled": "2026-06",
+    "disclaimer": "Approximate figures; always confirm fees, dates and eligibility on the official website before deciding."
+  },
+  "colleges": [
+    {
+      "key": "niat",
+      "name": "NIAT",
+      "full_name": "NIAT (NxtWave Institute of Advanced Technologies)",
+      "locations": ["Hyderabad", "Pune", "Chennai"],
+      "established": null,
+      "programs": ["B.Tech in Computer Science & Engineering (CSE)", "specialisations in Artificial Intelligence, Machine Learning & Data Science"],
+      "duration_years": 4,
+      "mode": "Full-time, residential",
+      "degree_and_affiliation": "UGC-recognised, AICTE-approved B.Tech degree awarded by a collaborating partner university (NxtWave has ~16 partner universities across India, e.g. Ajeenkya DY Patil University, Pune). The degree is awarded solely by the respective partner university.",
+      "eligibility": "Class 12 pass with a minimum of ~50% aggregate.",
+      "admission_test": "NxtWave Admission Test (NAT)",
+      "admission_process": "Apply online on the official site → take the NxtWave Admission Test (NAT) → counselling team contacts the candidate → shortlisted students pay fees and confirm the seat.",
+      "fees_approx": "Approximately Rs 8–18 lakh total for the 4-year programme (roughly Rs 2–4.5 lakh per year); the exact amount varies by partner university and cohort.",
+      "scholarships": "Merit-based scholarships are available.",
+      "highlights": "Industry-aligned, project-heavy curriculum (50+ real-world projects) integrating Full-Stack Development, Data Science and AI. NxtWave reports 100+ companies reaching out for hiring each month; recruiter pool spans startups to large firms (e.g. Accenture, Goldman Sachs, Amazon, Microsoft, Deloitte, Oracle, TCS, Infosys, Wipro, Cognizant).",
+      "admission_route": "Own application + NAT (not JoSAA / state counselling).",
+      "official_url": "https://www.niatindia.com/",
+      "sources": [
+        "https://www.niatindia.com/",
+        "https://www.shiksha.com/college/nxtwave-institute-of-advanced-technologies-hyderabad-236230",
+        "https://www.collegedekho.com/colleges/nxtwave-institute-of-advanced-technologies",
+        "https://www.kollegeapply.com/college/nxtwave-institute-of-advanced-technologies-hyderabad"
+      ]
+    },
+    {
+      "key": "scaler",
+      "name": "Scaler School of Technology",
+      "full_name": "Scaler School of Technology (SST)",
+      "locations": ["Bengaluru (Electronic City)"],
+      "established": "2023",
+      "programs": ["4-year UG in Computer Science & AI", "AI & Business"],
+      "duration_years": 4,
+      "mode": "Full-time, fully residential",
+      "degree_and_affiliation": "Industry-first UG programme in Computer Science & AI; positioned as a new-age UG degree built with industry mentors and a project-first approach.",
+      "eligibility": "Age ≤ 20 as of 1 July 2026; minimum 60% in Grade 12 Mathematics; open to all streams (science, commerce, arts); current Grade 12 students and recent pass-outs eligible.",
+      "admission_test": "NSET (Scaler / NSET entrance test)",
+      "admission_process": "Apply with academic details and a video essay → take NSET (120-min online test on Mathematics and Logical Reasoning), or use a fast-track option based on JEE/SAT scores → interview rounds (AI-led and industry-led).",
+      "fees_approx": "Approximately Rs 22–28 lakh total for the 4-year programme (some sources include hostel in the higher figure); application fee Rs 1,000.",
+      "scholarships": "Merit-based, women-in-tech, financial-need and coding-excellence scholarships (awarded for the first year; can continue in later years based on performance).",
+      "highlights": "Project-first curriculum co-built with industry mentors; specialisation tracks and industry immersion.",
+      "admission_route": "Own application + NSET (not JoSAA / state counselling).",
+      "official_url": "https://www.scaler.com/school-of-technology/",
+      "sources": [
+        "https://www.scaler.com/school-of-technology/",
+        "https://www.scaler.com/school-of-technology/admission/",
+        "https://www.shiksha.com/college/scaler-school-of-technology-electronic-city-bangalore-238352",
+        "https://collegedunia.com/college/64161-scaler-school-of-technology-bangalore"
+      ]
+    },
+    {
+      "key": "polaris",
+      "name": "Polaris School of Technology",
+      "full_name": "Polaris School of Technology (PST)",
+      "locations": ["Bengaluru (Electronic City)"],
+      "established": null,
+      "programs": ["4-year residential B.Tech in Computer Science (AI & ML)"],
+      "duration_years": 4,
+      "mode": "Full-time, residential",
+      "degree_and_affiliation": "B.Tech in Computer Science (AI/ML) offered in association with Medhavi Skills University; AI-first, practice-heavy curriculum with global exposure.",
+      "eligibility": "Class 12 with Physics, Chemistry, Mathematics (PCM) and a minimum of ~60%.",
+      "admission_test": "Polaris Admission Test (PAT)",
+      "admission_process": "Take the Polaris Admission Test (PAT) — a 120-min test with a choice of Aptitude or Coding track and instant scoring — followed by an interview with industry professionals (e.g. from Google, Amazon, Visa). Admission without JEE; ~300 seats, first-come-first-served.",
+      "fees_approx": "Approximately Rs 26 lakh total tuition for the 4-year programme; hostel charged separately (~Rs 1.4 lakh, varies by room type); application fee Rs 1,500.",
+      "scholarships": "Merit scholarships available (Polaris reports large total scholarship outlay for academic excellence).",
+      "highlights": "AI-first, hands-on curriculum; interviews and mentorship involving professionals from top tech companies; admission possible without JEE.",
+      "admission_route": "Own application + PAT (not JoSAA / state counselling).",
+      "official_url": "https://polariscampus.com/",
+      "sources": [
+        "https://polariscampus.com/",
+        "https://polariscampus.com/admissions",
+        "https://collegedunia.com/college/64976-polaris-school-of-technology-pst-bangalore",
+        "https://www.shiksha.com/college/polaris-school-of-technology-electronic-city-bangalore-238876/fees"
+      ]
+    },
+    {
+      "key": "newton",
+      "name": "Newton School of Technology",
+      "full_name": "Newton School of Technology (NST)",
+      "locations": ["Sonipat / NCR (with Rishihood University)", "Pune (with Ajeenkya DY Patil University)"],
+      "established": null,
+      "programs": ["4-year B.Tech in Computer Science & Artificial Intelligence"],
+      "duration_years": 4,
+      "mode": "Full-time, residential",
+      "degree_and_affiliation": "B.Tech in CS & AI co-designed with tech companies; degree awarded by the partner university (Rishihood University, UGC-recognised and NAAC-accredited; also offered with Ajeenkya DY Patil University, Pune).",
+      "eligibility": "10+2 with Physics, Chemistry, Mathematics from a recognised board and a minimum of ~50% aggregate, plus NSAT.",
+      "admission_test": "NSAT (Newton Scholastic Aptitude Test)",
+      "admission_process": "Take NSAT (sections: Mathematics, English, General Aptitude; ~80 single-correct MCQs) → interview.",
+      "fees_approx": "Approximately Rs 15.8–22.85 lakh total at Rishihood (Sonipat); from about Rs 12.5 lakh at the Ajeenkya DY Patil (Pune) campus. Figures vary by campus and cohort.",
+      "scholarships": "Merit scholarships up to 100% first-year tuition waiver based on NSAT and interview; from the second year the top ~30% of students can continue to receive tuition scholarships.",
+      "highlights": "Industry-co-designed B.Tech in CS/AI with a strong placements focus; recognised degree via the partner university.",
+      "admission_route": "Own application + NSAT (not JoSAA / state counselling).",
+      "official_url": "https://www.newtonschool.co/newton-school-of-technology-nst/home",
+      "sources": [
+        "https://www.newtonschool.co/newton-school-of-technology-nst/home",
+        "https://rishihood.edu.in/b-tech-computer-science-and-artificial-intelligence",
+        "https://collegedunia.com/college/64273-newton-school-of-technology-sonepat",
+        "https://www.collegedekho.com/colleges/newton-school-of-technology-courses"
+      ]
+    },
+    {
+      "key": "plaksha",
+      "name": "Plaksha University",
+      "full_name": "Plaksha University",
+      "locations": ["Mohali (Punjab)"],
+      "established": null,
+      "programs": ["B.Tech in Computer Science & AI", "B.Tech in Data Science, Economics & Business", "B.Tech in Robotics & Cyber-Physical Systems", "B.Tech in Biological Systems Engineering"],
+      "duration_years": 4,
+      "mode": "Full-time, residential",
+      "degree_and_affiliation": "Research-driven, interdisciplinary deep-tech university awarding its own B.Tech degrees.",
+      "eligibility": "10+2 with Mathematics and Physics; at least 18 years old as of 31 July 2026.",
+      "admission_test": "Uses JEE Main / SAT / ACT / Class-12 board scores (submit at least one) — no separate Plaksha entrance test.",
+      "admission_process": "Submit application (personal info, academic records, standardized test scores, essays, extracurricular/leadership) with at least one of SAT / ACT / JEE Main / Class-12 board scores → shortlisted applicants do a virtual personal interview and a technical exam.",
+      "fees_approx": "Approximately Rs 43.7 lakh total for the 4-year programme (about Rs 8.8 lakh in the first year).",
+      "scholarships": "About 85% of enrolled students receive a scholarship or financial aid; the university provides full tuition freeship to at least 5% of students from weaker sections.",
+      "highlights": "Research-led, interdisciplinary deep-tech engineering with a broad programme range (AI, Data Science, Robotics, Bio-systems).",
+      "admission_route": "Own application using JEE Main / SAT / ACT / board scores (not JoSAA seat allocation).",
+      "official_url": "https://plaksha.edu.in/",
+      "sources": [
+        "https://plaksha.edu.in/admissions",
+        "https://engineering.careers360.com/articles/plaksha-university-2026-fees-placements-scholarships-and-admission-insights",
+        "https://collegedunia.com/university/60489-plaksha-university-mohali",
+        "https://www.shiksha.com/university/plaksha-university-mohali-145921/admission"
+      ]
+    }
+  ]
+}

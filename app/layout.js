@@ -1,9 +1,9 @@
-import { DM_Sans } from "next/font/google";
+import { Geist } from "next/font/google";
 import "./globals.css";
 
-// Use DM Sans for both body and display for a cohesive, modern premium look.
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
+// Use Geist for both body and display for a cohesive, modern premium look.
+const geist = Geist({
+  variable: "--font-geist",
   subsets: ["latin"],
   display: "swap",
   weight: ["400", "500", "600", "700"],
@@ -12,7 +12,7 @@ const dmSans = DM_Sans({
 export const metadata = {
   title: "counsa.ai — AI Admission Counsellor",
   description:
-    "Calm, personalized guidance for TGEAPCET & JEE college admissions, powered by AI.",
+    "Counsa instantly analyzes your rank, category, and state to recommend the perfect colleges—combining 15 years of expert counselling with an IITian's judgment.",
   icons: {
     icon: [
       { url: '/branding/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
@@ -29,7 +29,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${dmSans.variable}`}>
+    <html lang="en" className={`${geist.variable}`}>
       <body>{children}</body>
     </html>
   );

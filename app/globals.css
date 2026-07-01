@@ -57,8 +57,8 @@
   --r-pill: 999px;
 
   /* ── Type ── */
-  --font-serif: var(--font-dm-sans), 'DM Sans', system-ui, sans-serif;
-  --font-sans:  var(--font-dm-sans), 'DM Sans', system-ui, sans-serif;
+  --font-serif: var(--font-geist), 'Geist', system-ui, sans-serif;
+  --font-sans:  var(--font-geist), 'Geist', system-ui, sans-serif;
 
   /* ── Legacy aliases (kept so older references don't break) ── */
   --background: var(--canvas);

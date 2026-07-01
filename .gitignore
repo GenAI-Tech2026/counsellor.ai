@@ -42,3 +42,7 @@ next-env.d.ts
 
 # Playwright MCP artifacts
 .playwright-mcp/
+
+# ngrok tunnel logs
+ngrok.log
+*.log

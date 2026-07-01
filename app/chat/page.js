@@ -14,13 +14,14 @@ import Link from 'next/link';
 import Image from 'next/image';
 import Sidebar from './Sidebar';
 import LeadCaptureModal from '@/components/LeadCaptureModal';
+import OnboardingModal from '@/components/OnboardingModal';
 import { createClient } from '@/lib/supabase/client';
 
 const SOURCE_RE = /\[Source:\s*([^\]]+)\]/g;
 
 const GREETING = {
   role: 'model',
-  text: "Hello! I'm **counsa.ai**, your AI admission counsellor.\n\nI can help you find colleges using **TGEAPCET**, **AP EAPCET**, **JEE Main & Advanced**, **KCET**, and **MHT-CET** data. Just tell me your exam and rank, and I'll guide you through the rest! 🎓",
+  text: "**I'll show you the colleges you can actually get into.**\n\nCounsa instantly analyzes your rank, category, and state to recommend the perfect colleges—combining 15 years of expert counselling with an IITian's judgment.",
   sources: [],
   greeting: true,
 };
@@ -193,12 +194,12 @@ function nextQuestion(profile, skipped) {
 // cutoff corpus — so this is a hand-picked UI section, not a retrieval result.
 // Thresholds are generous ("good student" band) and easy to tune per exam.
 const TOPPER_THRESHOLD = {
-  TGEAPCET: 15000,
-  APEAMCET: 15000,
-  KCET: 20000,
-  MHTCET: 20000,
-  JEE: 50000,
-  'JEE Advanced': 20000,
+  TGEAPCET: 15000000,
+  APEAMCET: 150000000,
+  KCET: 20000000,
+  MHTCET: 20000000,
+  JEE: 5000000000,
+  'JEE Advanced': 20000000,
 };
 
 // `key` maps to the server-side allowlist in /api/college (which holds the
@@ -391,6 +392,24 @@ export default function ChatPage() {
   // Auth + conversation state
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
+
+  // Hydrate guest chat state from sessionStorage on mount to avoid Next.js hydration mismatch
+  useEffect(() => {
+    try {
+      const savedMsgs = sessionStorage.getItem('counsa_guest_messages');
+      if (savedMsgs) {
+        const parsed = JSON.parse(savedMsgs);
+        if (parsed.length > 0) setMessages(parsed);
+      }
+    } catch {}
+
+    try {
+      const savedProfile = sessionStorage.getItem('counsa_guest_profile');
+      if (savedProfile) {
+        setProfile(JSON.parse(savedProfile));
+      }
+    } catch {}
+  }, []);
   const [conversations, setConversations] = useState([]);
   const [convLoading, setConvLoading] = useState(false);
   const [activeId, setActiveId] = useState(null);
@@ -493,6 +512,48 @@ export default function ChatPage() {
       setConvLoading(false);
     }
   }, [user]);
+
+  // ── Sync guest chat to backend after login ──
+  useEffect(() => {
+    if (!user || activeIdRef.current) return;
+    const syncGuestChat = async () => {
+      const savedMsgs = sessionStorage.getItem('counsa_guest_messages');
+      if (!savedMsgs) return;
+      try {
+        const parsed = JSON.parse(savedMsgs);
+        if (parsed.length > 1) { // Has actual chat beyond greeting
+          const res = await fetch('/api/conversations', { method: 'POST', body: '{}' });
+          if (res.ok) {
+            const { conversation } = await res.json();
+            setActiveId(conversation.id);
+            activeIdRef.current = conversation.id;
+            for (const msg of parsed) {
+              if (msg.greeting || (!msg.text && msg.role === 'user')) continue;
+              await fetch(`/api/conversations/${conversation.id}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: msg.role, content: msg.text, sources: msg.sources || [] }),
+              });
+            }
+            loadConversations();
+          }
+        }
+      } catch {}
+      sessionStorage.removeItem('counsa_guest_messages');
+      sessionStorage.removeItem('counsa_guest_profile');
+    };
+    syncGuestChat();
+  }, [user, loadConversations]);
+
+  // Save guest state so it survives the OAuth redirect
+  useEffect(() => {
+    if (!user) {
+      sessionStorage.setItem('counsa_guest_messages', JSON.stringify(messages));
+      if (profile) sessionStorage.setItem('counsa_guest_profile', JSON.stringify(profile));
+    }
+  }, [messages, profile, user]);
+
+
 
   // Defer all state updates into an async callback so the effect body itself
   // never calls setState synchronously (avoids cascading-render lint, #18).
@@ -609,6 +670,8 @@ export default function ChatPage() {
     setSkipped({});
     setRankDraft('');
     setPopupDismissedAt(-1);
+    sessionStorage.removeItem('counsa_guest_messages');
+    sessionStorage.removeItem('counsa_guest_profile');
     inputRef.current?.focus();
   }, [isLoading, isStreaming]);
 
@@ -627,6 +690,8 @@ export default function ChatPage() {
     setSkipped({});
     setRankDraft('');
     setPopupDismissedAt(-1);
+    sessionStorage.removeItem('counsa_guest_messages');
+    sessionStorage.removeItem('counsa_guest_profile');
 
     try {
       const res = await fetch(`/api/conversations/${id}`);
@@ -693,6 +758,15 @@ export default function ChatPage() {
   }, []);
 
   const sendMessage = async (text) => {
+    if (!user) {
+      const userMessageCount = messages.filter(m => m.role === 'user' && m.text).length;
+      if (userMessageCount >= 3) {
+        setForceAuthOpen(true);
+        setToast('You have reached the free message limit. Please sign in to continue.');
+        return;
+      }
+    }
+
     const userMsg = { role: 'user', text, sources: [] };
     const history = messages
       .filter(m => !m.greeting && (m.role !== 'user' || m.text))
@@ -841,6 +915,16 @@ export default function ChatPage() {
       }
     }
   };
+
+  // Enforce a 7-message limit for guests before requiring sign in
+  useEffect(() => {
+    if (user) return;
+    const userMessageCount = messages.filter(m => m.role === 'user' && m.text).length;
+    if (userMessageCount >= 7) {
+      setForceAuthOpen(true);
+      setToast('You have reached the free message limit. Please sign in to continue.');
+    }
+  }, [messages, user]);
 
   // Abort the in-flight streaming request from the "Stop" control (#12).
   const handleStop = useCallback(() => {
@@ -1073,7 +1157,7 @@ export default function ChatPage() {
         onKeyDown={handleComposerKeyDown}
         placeholder="Ask Me Anything..."
         className={styles.composerInput}
-        rows={3}
+        rows={1}
         disabled={busy}
         autoFocus
       />
@@ -1282,36 +1366,41 @@ export default function ChatPage() {
         forceOpen={forceAuthOpen} 
         onClose={() => setForceAuthOpen(false)} 
       />
-      <AnimatePresence mode="popLayout">
-        <motion.div
-          key="sidebar"
-          initial={{ opacity: 0, x: -50, scale: 0.95 }}
-          animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: -50, scale: 0.95 }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          style={{ zIndex: 100 }}
-        >
-          <Sidebar
-            conversations={conversations}
-            activeId={activeId}
-            onSelect={selectConversation}
-            onNew={startNewChat}
-            onDelete={deleteConversation}
-            user={user}
-            loading={convLoading}
-            collapsed={collapsed}
-            onToggle={() => setCollapsed(c => !c)}
-            mobileOpen={mobileNavOpen}
-            onCloseMobile={() => setMobileNavOpen(false)}
-          />
-        </motion.div>
-      </AnimatePresence>
-      {mobileNavOpen && (
-        <div
-          className={styles.mobileBackdrop}
-          onClick={() => setMobileNavOpen(false)}
-          aria-hidden="true"
-        />
+      <OnboardingModal user={user} />
+      {user && (
+        <>
+          <AnimatePresence mode="popLayout">
+            <motion.div
+              key="sidebar"
+              initial={{ opacity: 0, x: -50, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -50, scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              style={{ zIndex: 100 }}
+            >
+              <Sidebar
+                conversations={conversations}
+                activeId={activeId}
+                onSelect={selectConversation}
+                onNew={startNewChat}
+                onDelete={deleteConversation}
+                user={user}
+                loading={convLoading}
+                collapsed={collapsed}
+                onToggle={() => setCollapsed(c => !c)}
+                mobileOpen={mobileNavOpen}
+                onCloseMobile={() => setMobileNavOpen(false)}
+              />
+            </motion.div>
+          </AnimatePresence>
+          {mobileNavOpen && (
+            <div
+              className={styles.mobileBackdrop}
+              onClick={() => setMobileNavOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+        </>
       )}
 
       <div className={styles.container}>
@@ -1328,7 +1417,7 @@ export default function ChatPage() {
             </button>
           )}
           
-          <div className={`${styles.headerBrand} ${!collapsed ? styles.hideOnDesktop : ''}`}>
+          <div className={`${styles.headerBrand} ${(!collapsed && user) ? styles.hideOnDesktop : ''}`}>
             <Image src="/branding/counsa_logo_mini.png" alt="counsa.ai" width={24} height={24} unoptimized />
             <span style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--ink)' }}>counsa.ai</span>
           </div>
@@ -1342,7 +1431,7 @@ export default function ChatPage() {
               </span>
             )}
           </div>
-          {!user ? (
+          {!user && (
             <Link
               href="/login"
               prefetch={false}
@@ -1354,18 +1443,6 @@ export default function ChatPage() {
               <UserPlus size={16} />
               <span>Sign up</span>
             </Link>
-          ) : (
-            <button
-              type="button"
-              className={styles.exportButton}
-              onClick={handleExport}
-              disabled={!hasUserMessages}
-              aria-label="Download chat"
-              title="Download chat (.md)"
-            >
-              <Download size={16} />
-              <span>Download</span>
-            </button>
           )}
         </header>
 
@@ -1496,9 +1573,6 @@ export default function ChatPage() {
           {chatQuestionPopup}
           {composer}
           {rateHint}
-          <p className={styles.disclaimer}>
-            Data from official TGEAPCET, AP EAPCET, JEE Main & Advanced, KCET & MHT-CET cutoffs. For reference only.
-          </p>
         </footer>
         </>
         ) : (
@@ -1518,11 +1592,11 @@ export default function ChatPage() {
             </motion.div>
             
             <motion.h1 variants={fadeUp} className={styles.heroTitle}>
-              I&apos;ll show you the colleges you can <span className={styles.titleHighlight}>actually get into.</span>
+              Don&apos;t Risk <span className={styles.titleHighlight}>Your Admission.</span>
             </motion.h1>
             
             <motion.p variants={fadeUp} className={styles.heroDesc}>
-              Counsa instantly analyzes your rank, category, and state to recommend the perfect colleges—combining 15 years of expert counselling with an IITian&apos;s judgment.
+              Making the wrong choice costs you four years. Counsa protects your future by combining 15 years of elite counseling experience with an IITian&apos;s knowledge. It instantly calculates the absolute best colleges for your rank, category, and state.
             </motion.p>
 
             <motion.div variants={fadeUp} className={styles.heroComposer}>

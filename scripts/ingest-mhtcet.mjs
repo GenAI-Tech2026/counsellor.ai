@@ -24,6 +24,7 @@ import pkg from 'xlsx';
 const { readFile, utils: xlsxUtils } = pkg;
 import { createClient } from '@supabase/supabase-js';
 import { embedBatch } from '../lib/embeddings.mjs';
+import { enrichChunk } from '../lib/text-enrich.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FILE = join(__dirname, '../public/data/mhtcet/MHTCET_2024_ENGG_AllRounds_CutOff.xlsx');
@@ -35,7 +36,10 @@ const TABLE = 'mhtcet_2024';
 
 function norm(s) { return String(s ?? '').replace(/\s+/g, ' ').trim(); }
 function toRank(v) {
-  const n = parseInt(String(v).replace(/[^0-9]/g, ''), 10);
+  // Drop any fractional part BEFORE stripping separators. Some source cells are
+  // strings like "1105820.0"; removing the dot first would append the "0" and
+  // 10× the rank ("11058200"). split('.')[0] keeps only the integer portion.
+  const n = parseInt(String(v).split('.')[0].replace(/[^0-9]/g, ''), 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 function slug(s) { return norm(s).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
@@ -81,12 +85,15 @@ function buildChunkText(rec) {
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([cat, rank]) => `${cat}: ${rank}`)
     .join(', ');
-  return [
+  const base = [
     `MHT-CET 2024 Engineering cut-off (${rec.round}, ${rec.seat_type}).`,
     `College: ${rec.college_name} (Code: ${rec.college_code}). ${rec.status}.`,
     `Branch: ${rec.branch_name} (Code: ${rec.branch_code}).`,
     `Closing CET merit numbers by category — ${rankParts}.`,
   ].join(' ');
+  return base + enrichChunk({
+    college: rec.college_name, branch: rec.branch_name,
+  });
 }
 
 function chunkId(rec) {
