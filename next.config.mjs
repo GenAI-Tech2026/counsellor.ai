@@ -1,27 +1,20 @@
-import path from 'path';
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Keep supabase out of the bundler.
-  serverExternalPackages: ['@supabase/supabase-js'],
-  
+  // Keep these out of the bundler and require them from node_modules at runtime.
+  //   • @supabase/supabase-js — avoids bundler issues with its dynamic requires.
+  //   • onnxruntime-node — the on-device embedding backend used by
+  //     @xenova/transformers (lib/embeddings.mjs). It ships a prebuilt native
+  //     .node binary per platform (Vercel installs the linux-x64 build); marking
+  //     it external lets Output File Tracing include that binary instead of the
+  //     bundler trying (and failing) to pack a native addon. This replaces the
+  //     old "alias onnxruntime-node → empty.js" hack, which force-selected the
+  //     WASM backend and was never actually exercised at runtime on Vercel (the
+  //     embedding path used a hosted API that has since been retired).
+  serverExternalPackages: ['@supabase/supabase-js', 'onnxruntime-node'],
+
   // Hide the Next.js dev server indicator that overlaps the mobile UI
   devIndicators: {
     buildActivityPosition: 'top-right',
-  },
-
-  // Ignore native node modules when bundling @xenova/transformers for Vercel
-  webpack: (config) => {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      "onnxruntime-node": path.resolve("./lib/empty.js"),
-    };
-    return config;
-  },
-  turbopack: {
-    resolveAlias: {
-      "onnxruntime-node": "./lib/empty.js",
-    },
   },
 
   // Allow the dev server (and its HMR websocket at /_next/webpack-hmr) to be

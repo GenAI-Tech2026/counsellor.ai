@@ -792,6 +792,10 @@ export default function ChatPage() {
           gender: profile.gender ?? null,
           branch_preference: profile.branch_preference ?? null,
           location_preference: profile.location_preference ?? null,
+          // Carry the named-college target across turns, else a lookup like "can I
+          // get into IIT Bombay?" loses focus once rank/category/gender complete
+          // the profile and the flow falls into the generic rank-recommend path.
+          target_college: profile.target_college ?? null,
         }
       : null;
 
