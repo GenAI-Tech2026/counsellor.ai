@@ -22,6 +22,7 @@ import pkg from 'xlsx';
 const { readFile, utils: xlsxUtils } = pkg;
 import { createClient } from '@supabase/supabase-js';
 import { embedBatch } from '../lib/embeddings.mjs';
+import { enrichChunk, expandUniversity } from '../lib/text-enrich.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '../public/data/apeamcet');
@@ -120,13 +121,17 @@ function buildChunkText(rec) {
     .map(f => `${RANK_LABELS[f]}: ${rec[f]}`)
     .join(', ');
   const localArea = rec.local_area ? ` Local area: ${rec.local_area}.` : '';
-  return [
+  const base = [
     `APEAMCET (AP EAPCET) 2022 — Last Rank Statement.`,
     `College: ${rec.inst_name} (Code: ${rec.inst_code}), ${rec.place}, ${rec.dist || ''} (${rec.region || ''}).`,
     `Type: ${rec.col_type || rec.inst_type || 'N/A'}. Affiliated to: ${rec.affiliated || 'N/A'}.${localArea}`,
     `Branch: ${rec.branch_name} (Code: ${rec.branch_code}).`,
     `Last ranks by category — ${rankParts}.`,
   ].join(' ');
+  return base + enrichChunk({
+    college: rec.inst_name, place: rec.place, dist: rec.dist, region: rec.region,
+    affiliated: rec.affiliated, branch: rec.branch_name,
+  });
 }
 
 function chunkId(rec) {
@@ -199,7 +204,8 @@ async function main() {
         source: 'APEAMCET 2022', exam: EXAM, year: YEAR, state: STATE,
         inst_code: rec.inst_code, inst_name: rec.inst_name, place: rec.place,
         region: rec.region, dist: rec.dist, col_type: rec.col_type || rec.inst_type,
-        affiliated: rec.affiliated, local_area: rec.local_area || '',
+        affiliated: rec.affiliated, aff_full: expandUniversity(rec.affiliated),
+        local_area: rec.local_area || '',
         branch_code: rec.branch_code, branch_name: rec.branch_name,
         ...Object.fromEntries(RANK_FIELDS.map(f => [f, rec[f] ?? 0])),
       },
