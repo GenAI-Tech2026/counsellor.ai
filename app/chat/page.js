@@ -760,7 +760,7 @@ export default function ChatPage() {
   const sendMessage = async (text) => {
     if (!user) {
       const userMessageCount = messages.filter(m => m.role === 'user' && m.text).length;
-      if (userMessageCount >= 7) {
+      if (userMessageCount >= 3) {
         setForceAuthOpen(true);
         setToast('You have reached the free message limit. Please sign in to continue.');
         return;
