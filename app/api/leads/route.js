@@ -3,9 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 
 export async function POST(req) {
   try {
-    const { name, phone, state, email } = await req.json();
+    const { name, phone, state, email, studyYear } = await req.json();
 
-    if (!name || !phone || !state || !email) {
+    if (!name || !phone || !state || !email || !studyYear) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -23,7 +23,7 @@ export async function POST(req) {
 
     const { error } = await supabase
       .from('leads')
-      .insert([{ name, phone, state, email }]);
+      .insert([{ name, phone, state, email, study_year: studyYear }]);
 
     if (error) {
       console.error('Error inserting lead:', error.message);

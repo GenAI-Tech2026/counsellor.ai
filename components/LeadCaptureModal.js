@@ -16,7 +16,7 @@ const INDIAN_STATES = [
 
 export default function LeadCaptureModal({ user, onComplete, forceOpen, onClose }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [formData, setFormData] = useState({ firstName: '', lastName: '', phone: '', state: '', email: '' });
+  const [formData, setFormData] = useState({ firstName: '', lastName: '', phone: '', state: '', email: '', studyYear: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
@@ -80,7 +80,8 @@ export default function LeadCaptureModal({ user, onComplete, forceOpen, onClose 
           name: fullName, 
           phone: `+91${formData.phone}`, 
           state: formData.state,
-          email: formData.email
+          email: formData.email,
+          studyYear: formData.studyYear
         }),
       });
 
@@ -221,6 +222,22 @@ export default function LeadCaptureModal({ user, onComplete, forceOpen, onClose 
                 </div>
               </div>
               
+              <div className={styles.formGroup}>
+                <label>Study Year</label>
+                <select 
+                  required
+                  value={formData.studyYear}
+                  onChange={e => setFormData({ ...formData, studyYear: e.target.value })}
+                  className={styles.detailSelect}
+                  style={{ width: '100%', padding: '12px', fontSize: '1rem' }}
+                >
+                  <option value="" disabled>Select your year of study...</option>
+                  <option value="Intermediate 1st Year">Intermediate 1st Year</option>
+                  <option value="Intermediate 2nd Year">Intermediate 2nd Year</option>
+                  <option value="Completed / Dropper">Completed / Dropper</option>
+                </select>
+              </div>
+
               <div className={styles.formGroup}>
                 <label>State</label>
                 <select 
