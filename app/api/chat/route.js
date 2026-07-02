@@ -19,6 +19,12 @@ import { detectNextgen, formatNextgenContext } from '@/lib/nextgen';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-for-build');
 
+// Give the on-device embedding model room to cold-start on Vercel. The first
+// request on a fresh instance downloads + initializes the bge model; a short
+// default timeout would kill it mid-load, so every cold request would fail.
+// Warm invocations reuse the cached model and return in milliseconds.
+export const maxDuration = 60;
+
 /**
  * Call model.generateContent with retries on TRANSIENT errors (Gemini 503 "high
  * demand", 429, 500, network blips). These spikes are usually momentary, so a
@@ -73,6 +79,15 @@ const CATEGORY_FIELD = {
   'ST':    { boys: 'st_boys',  girls: 'st_girls'  },
   'EWS':   { boys: 'ews_boys', girls: 'ews_girls' },
 };
+
+// For the "recommend colleges for my rank" path we pull the FULL eligible set
+// (rank-mode) so the deterministic builder can pick the colleges whose closing
+// rank is genuinely CLOSEST to the student's — a cutoff-proximity task that a
+// top-K semantic search silently gets wrong (it can bury MGIT/CVR/BVRIT at rank
+// ~5–7k under semantically-similar but rank-distant colleges). This bound sits
+// above the largest corpus (JEE Advanced, ~18.7k rows) so every eligible row is
+// returned (paged in rag.js); the answer-builder then keeps only the nearest few.
+const RECOMMEND_FULL_TOPK = 20000;
 
 // Build {college, branch, closing, phase} rows DIRECTLY from the retrieved DB
 // metadata — no LLM. The closing rank is read from the real field for the
@@ -426,7 +441,7 @@ function buildCollegeAnswer(rows, { rank, catLabel, branchPref, locationPref }) 
 // Kakinada"). Unlike buildCollegeAnswer this does NOT gate by the student's rank
 // or split Safe/Borderline — it simply reports the named college's actual
 // cutoffs (best/lowest per branch), sorted by closing rank.
-function buildLookupAnswer(rows, { catLabel, collegeName, branchPref }) {
+function buildLookupAnswer(rows, { catLabel, collegeName, branchPref, rank }) {
   const items = filterByBranch(normalizeRows(rows), branchPref);
   if (items.length === 0) {
     return `I couldn't find ${branchPref ? `${branchPref} ` : ''}seats at "${collegeName}" in the most recent available records. Double-check the college name or branch, or I can list options near your rank instead.`;
@@ -454,6 +469,21 @@ function buildLookupAnswer(rows, { catLabel, collegeName, branchPref }) {
     ? `Here are ${branchPref ? branchPref + ' ' : ''}options matching **${collegeName}** (${catLabel}), closest cutoffs first:`
     : `Here ${uniq.length === 1 ? 'is the cutoff' : 'are the cutoffs'} for **${collegeName}** (${catLabel}), based on the most recent available data:`;
 
+  // Direct yes/no verdict when the student's rank is known — a "can I get into X?"
+  // question deserves an answer, not just a cutoff table. A seat is reachable when
+  // its closing rank is numerically >= the student's rank.
+  let verdict = '';
+  if (Number.isFinite(rank) && rank > 0) {
+    const rankStr = Math.trunc(rank).toLocaleString('en-IN');
+    const reachable = uniq.filter((r) => r.closing >= rank);
+    if (reachable.length) {
+      verdict = `**Yes — a rank of ${rankStr} (${catLabel}) is within reach at ${collegeName}.** ${reachable.length === 1 ? 'One option below closes' : `${reachable.length} of the options below close`} at or above your rank.\n\n`;
+    } else {
+      const best = uniq[uniq.length - 1].closing; // most lenient (highest) closing
+      verdict = `**No — a rank of ${rankStr} (${catLabel}) is out of reach at ${collegeName}** on the latest data. Even its most lenient ${branchPref ? branchPref + ' ' : ''}cutoff closes at **${best.toLocaleString('en-IN')}** (a numerically lower — tougher — rank than yours). The cutoffs are below for reference.\n\n`;
+    }
+  }
+
   const table = [
     `| Institute/College | Program/Branch | Closing/Last Rank (${catLabel}) | Phase/Round |`,
     '| :--- | :--- | :--- | :--- |',
@@ -461,7 +491,7 @@ function buildLookupAnswer(rows, { catLabel, collegeName, branchPref }) {
   ].join('\n');
 
   return [
-    heading,
+    verdict + heading,
     '',
     table,
     '',
@@ -663,6 +693,10 @@ export async function POST(req) {
   //    corpus hard (rank/category) before similarity ranking, otherwise we fall
   //    back to a plain semantic lookup so the model can still ground its reply.
   let contextBlock = '';
+  // Set when retrieval THREW (e.g. the embedding step failed) — distinct from a
+  // clean empty result. An infra failure must not be reported to the student as
+  // "no colleges match your rank"; we surface a transient-error message instead.
+  let retrievalFailed = false;
   // Structured metadata of the retrieved rows (parallel to contextBlock). Lets the
   // deterministic path build the college rows directly from real DB fields and skip
   // the row-extraction LLM call entirely (it falls back to extraction if empty).
@@ -745,9 +779,9 @@ export async function POST(req) {
         const genderVal = JEE_GENDER[gender] ?? null;
         const parts = [label, category, gender, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieve(queryStr, 40, { rank: retrievalMinRank, seatType, gender: genderVal }));
+        ({ contextBlock, sources: retrievedSources } = await retrieve(queryStr, RECOMMEND_FULL_TOPK, { rank: retrievalMinRank, seatType, gender: genderVal, rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieve(queryStr, 10, { rank: null, seatType, gender: genderVal }));
+          ({ contextBlock, sources: retrievedSources } = await retrieve(queryStr, RECOMMEND_FULL_TOPK, { rank: null, seatType, gender: genderVal, rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = [label, category, gender, ...prefParts];
@@ -765,9 +799,9 @@ export async function POST(req) {
         const fallbackFilter = fieldName ? { [fieldName]: { '$gte': 1 } } : null;
         const parts = ['APEAMCET 2022', category, gender, `rank ${rank}`, 'eligible colleges last rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(queryStr, 40, whereFilter));
+        ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(queryStr, RECOMMEND_FULL_TOPK, whereFilter, { rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(queryStr, 10, fallbackFilter));
+          ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(queryStr, RECOMMEND_FULL_TOPK, fallbackFilter, { rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = ['APEAMCET 2022', category, gender, ...prefParts];
@@ -783,9 +817,9 @@ export async function POST(req) {
         const code = KCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['KCET 2024 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(queryStr, 40, { rankField: code, rank: retrievalMinRank }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(queryStr, 10, { rankField: code, rank: null }));
+          ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: null, rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = ['KCET 2024 Engineering', category, ...prefParts];
@@ -801,9 +835,9 @@ export async function POST(req) {
         const code = MHTCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['MHT-CET 2024 Engineering', category, `CET merit number ${rank}`, 'eligible colleges closing rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(queryStr, 40, { rankField: code, rank: retrievalMinRank }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(queryStr, 10, { rankField: code, rank: null }));
+          ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: null, rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = ['MHT-CET 2024 Engineering', category, ...prefParts];
@@ -821,9 +855,12 @@ export async function POST(req) {
         const fallbackFilter = fieldName ? { [fieldName]: { '$gte': 1 } } : null;
         const parts = ['TGEAPCET 2025', category, gender, `rank ${rank}`, 'eligible colleges last rank cutoff', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieveContext(queryStr, 40, whereFilter));
+        // Rank-mode: pull ALL eligible colleges (closing >= retrievalMinRank) so the
+        // deterministic builder can rank them by cutoff proximity, not embedding
+        // similarity — otherwise the colleges nearest the student's rank get dropped.
+        ({ contextBlock, sources: retrievedSources } = await retrieveContext(queryStr, RECOMMEND_FULL_TOPK, whereFilter, { rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieveContext(queryStr, 10, fallbackFilter));
+          ({ contextBlock, sources: retrievedSources } = await retrieveContext(queryStr, RECOMMEND_FULL_TOPK, fallbackFilter, { rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = ['TGEAPCET 2025', category, gender, ...prefParts];
@@ -833,6 +870,7 @@ export async function POST(req) {
     }
     // Rank known but category/gender missing → no retrieval; model asks questions
   } catch (err) {
+    retrievalFailed = true;
     console.error('Retrieval error (continuing without context):', err.message);
   }
   mark('retrieve');
@@ -944,7 +982,7 @@ ${closingRule}
       if (timing) console.log('[chat] deterministic', JSON.stringify(marks));
 
       const finalText = lookupReady
-        ? buildLookupAnswer(rows, { catLabel, collegeName: target_college, branchPref: branch_preference })
+        ? buildLookupAnswer(rows, { catLabel, collegeName: target_college, branchPref: branch_preference, rank })
         : buildCollegeAnswer(rows, { rank, catLabel, branchPref: branch_preference, locationPref: location_preference });
 
       if (finalText) {
@@ -968,6 +1006,16 @@ ${closingRule}
     // empty context falls to the conversational model, which can improvise a
     // misleading table from earlier turns in the chat history.
     if (!offTopic && !wantsAdvice && !generalInfo && !nextgenContext && !contextBlock && hasAllRequired && !lookupActive) {
+      // Retrieval THREW (embedding/DB error) → don't claim there are no matching
+      // colleges (there almost certainly are). Ask the student to retry.
+      if (retrievalFailed) {
+        const msg = `Sorry — I hit a temporary problem looking up colleges just now. Please send your message again in a moment and I'll pull your options.`;
+        const out = new TextEncoder().encode(msg);
+        const stream = new ReadableStream({ start(c) { c.enqueue(out); c.close(); } });
+        return new Response(stream, {
+          headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
+        });
+      }
       const genderLabel = genderMatters ? (gender === 'girls' ? 'Girls' : 'Boys') : '';
       const catLabel = [category, genderLabel].filter(Boolean).join(' ');
       const rankStr = Number(rank).toLocaleString('en-IN');
