@@ -2,9 +2,14 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
   retrieveContext, retrieveJeeContext, retrieveJeeAdvancedContext,
   retrieveApeamcetContext, retrieveKcetContext, retrieveMhtcetContext,
+  retrieveWbjeeContext, retrieveComedkContext, retrieveKeamContext,
+  retrieveTneaContext, retrieveCuetContext, retrieveBitsatContext,
+  retrieveNdaContext,
   retrieveNextgenContext,
   JEE_SEAT_TYPE, JEE_GENDER,
   APEAMCET_CATEGORY_FIELD, KCET_CATEGORY_CODE, MHTCET_CATEGORY_CODE,
+  WBJEE_CATEGORY_CODE, COMEDK_CATEGORY_CODE, KEAM_CATEGORY_CODE,
+  TNEA_CATEGORY_CODE, CUET_CATEGORY_CODE,
   tokenizeCollege,
 } from '@/lib/rag';
 import { SYSTEM_PROMPT } from '@/lib/system-prompt';
@@ -80,6 +85,20 @@ const CATEGORY_FIELD = {
   'EWS':   { boys: 'ews_boys', girls: 'ews_girls' },
 };
 
+// Exams whose category codes are gender-neutral (no separate boys/girls cutoff),
+// so gender is NOT a required profile field for them. The state EAMCET-style
+// exams + JoSAA keep gender as a cutoff axis; everything here does not.
+const GENDERLESS_EXAMS = new Set(['KCET', 'MHTCET', 'WBJEE', 'COMEDK', 'KEAM', 'TNEA', 'CUET', 'BITSAT', 'NDA']);
+
+// Exams with no reservation-category axis (category isn't a required field).
+const NO_CATEGORY_EXAMS = new Set(['BITSAT', 'NDA']);
+
+// Exams that never use the deterministic Safe/Borderline rank-proximity builder:
+// the SCORE-based ones (higher is better, the opposite of a rank) and NDA (info-
+// only, aggregate national data with no colleges). All answer conversationally,
+// grounded in the retrieved real cut-off context.
+const SCORE_EXAMS = new Set(['TNEA', 'CUET', 'BITSAT', 'NDA']);
+
 // For the "recommend colleges for my rank" path we pull the FULL eligible set
 // (rank-mode) so the deterministic builder can pick the colleges whose closing
 // rank is genuinely CLOSEST to the student's — a cutoff-proximity task that a
@@ -113,6 +132,15 @@ function metaToRows(exam, sources, { category, gender }) {
       college = m.college_name; branch = m.branch_name; closing = code ? Number(m[code]) : NaN; phase = m.round;
     } else if (exam === 'MHTCET') {
       const code = MHTCET_CATEGORY_CODE[cat] || null;
+      college = m.college_name; branch = m.branch_name; closing = code ? Number(m[code]) : NaN; phase = m.round;
+    } else if (exam === 'WBJEE') {
+      // Long format: rows are already filtered to the student's category → closing_rank is theirs.
+      college = m.institute; branch = m.program; closing = Number(m.closing_rank); phase = m.round;
+    } else if (exam === 'COMEDK') {
+      const code = COMEDK_CATEGORY_CODE[cat] || null;
+      college = m.college_name; branch = m.branch_name; closing = code ? Number(m[code]) : NaN; phase = '';
+    } else if (exam === 'KEAM') {
+      const code = KEAM_CATEGORY_CODE[cat] || null;
       college = m.college_name; branch = m.branch_name; closing = code ? Number(m[code]) : NaN; phase = m.round;
     } else {
       // TGEAPCET (default).
@@ -167,7 +195,7 @@ CRITICAL — extract a DELTA, not the whole profile. Output a field's value ONLY
 JSON schema (null for anything not mentioned):
 {
   "rank": <integer or null>,
-  "exam": <"TGEAPCET" | "APEAMCET" | "JEE" | "JEE Advanced" | "KCET" | "MHTCET" | null>,
+  "exam": <"TGEAPCET" | "APEAMCET" | "JEE" | "JEE Advanced" | "KCET" | "MHTCET" | "WBJEE" | "COMEDK" | "KEAM" | "TNEA" | "CUET" | "BITSAT" | "NDA" | null>,
   "category": <category code or null — see per-exam rules>,
   "gender": <"boys"|"girls" | null>,
   "branch_preference": <plain English or null>,
@@ -191,6 +219,13 @@ Exam mapping:
 - "jee advanced / advanced / iit (admission) / CRL advanced" → "JEE Advanced"
 - "kcet / kea / karnataka cet / Karnataka CET" → "KCET"
 - "mht-cet / mhtcet / maharashtra cet / cap round" → "MHTCET"
+- "wbjee / west bengal jee / wb jee" → "WBJEE"
+- "comedk / comed-k / karnataka private" → "COMEDK"
+- "keam / kerala cee / kerala engineering" → "KEAM"
+- "tnea / tamil nadu engineering admissions / anna university" → "TNEA"
+- "cuet / cuet-ug / du csas / delhi university" → "CUET"
+- "bitsat / bits / bits pilani" → "BITSAT"
+- "nda / na / national defence academy / naval academy" → "NDA"
 
 Category mapping when exam is TGEAPCET (Telangana categories):
 - "backward class A / BC-A / BCA" → "BC-A" (same for B C D E)
@@ -219,6 +254,28 @@ Category mapping when exam is MHTCET (Maharashtra categories):
 - "general / open" → "GENERAL"
 - "OBC" → "OBC"; "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"
 - "VJ / VJNT" → "VJ"; "NT1 / NT-B" → "NT1"; "NT2 / NT-C" → "NT2"; "NT3 / NT-D" → "NT3"; "SEBC" → "SEBC"
+
+Category mapping when exam is WBJEE (West Bengal categories):
+- "general / open" → "OPEN"; "OBC-A / OBC A" → "OBC-A"; "OBC-B / OBC B" → "OBC-B"; "OBC" → "OBC"
+- "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"; "TFW" → "TFW"
+
+Category mapping when exam is COMEDK (Karnataka): "general / GM / open" → "GENERAL" (this dataset is General Merit).
+
+Category mapping when exam is KEAM (Kerala categories):
+- "general / state merit / SM / open" → "GENERAL"; "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"
+- "ezhava / OBC / EZ" → "EZ"; "muslim / MU" → "MU"; other Kerala communal codes → that exact 2-letter code
+
+Category mapping when exam is TNEA (Tamil Nadu categories; NOTE this is a MARK out of 200, not a rank):
+- "general / OC / open" → "OC"; "BC" → "BC"; "BCM" → "BCM"; "MBC" → "MBC"; "SC" → "SC"; "SCA" → "SCA"; "ST" → "ST"
+
+Category mapping when exam is CUET (DU CSAS; NOTE this is a CUET SCORE, not a rank):
+- "general / UR / unreserved / open" → "UR"; "OBC" → "OBC"; "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"; "PwBD / PwD" → "PWBD"
+
+BITSAT has NO reservation categories (NOTE it is a BITSAT SCORE, not a rank) — leave category null.
+
+NDA & NA is an aggregate national exam (no colleges, no reservation category) — leave category null; questions are factual ("what was the NDA 2024 cut-off?").
+
+For TNEA / CUET / BITSAT the number the student gives is their MARK/SCORE (higher is better), not a rank — still put it in the "rank" field.
 
 target_college vs location_preference (IMPORTANT — keep them distinct):
 - "target_college" → set ONLY when the student asks about ONE specific named college/university's cutoff or admission, e.g. "what's the CSE cutoff at JNTU Kakinada", "can I get into NIT Warangal", "last rank for Andhra University". Copy the institute/university name as written (keep the short common form, e.g. "JNTU Kakinada", "NIT Warangal").
@@ -254,7 +311,7 @@ Other:
  *  re-running the LLM extractor on a pure follow-up). */
 function isProfileComplete(p) {
   if (!p || !p.exam || p.rank == null || !p.category) return false;
-  const genderMatters = p.exam !== 'KCET' && p.exam !== 'MHTCET';
+  const genderMatters = !GENDERLESS_EXAMS.has(p.exam);
   return genderMatters ? !!p.gender : true;
 }
 
@@ -262,7 +319,7 @@ function isProfileComplete(p) {
 // category / branch / location keyword. Pure follow-ups ("show the list", "any
 // city is fine") match nothing here, so we reuse the known profile and skip a
 // whole Gemini extraction round-trip.
-const CHANGE_RE = /\d|\b(eamcet|eapcet|tgeapcet|apeamcet|jee|josaa|nit|iit|iiit|gfti|advanced|kcet|kea|mht|cet|cap|oc|obc|sc|st|ews|bc|gm|general|open|reserv|boy|girl|male|female|she|he|rank|cse|ece|mech|civil|eee|branch|college|university|city|district|location|near|prefer)\b/i;
+const CHANGE_RE = /\d|\b(eamcet|eapcet|tgeapcet|apeamcet|jee|josaa|nit|iit|iiit|gfti|advanced|kcet|kea|mht|cet|cap|wbjee|comedk|keam|kerala|tnea|anna|cuet|csas|bitsat|bits|pilani|nda|naval|defence|score|marks|oc|obc|sc|st|ews|bc|gm|sm|ur|general|open|reserv|boy|girl|male|female|she|he|rank|cse|ece|mech|civil|eee|branch|college|university|city|district|location|near|prefer)\b/i;
 function looksLikeChange(msg) {
   return CHANGE_RE.test(String(msg || ''));
 }
@@ -302,7 +359,7 @@ function clientIp(req) {
 
 // `priorParams` comes from the client, so never trust its shape: whitelist the
 // fields and bound the values before they reach retrieval / the cache key.
-const VALID_EXAMS = new Set(['TGEAPCET', 'APEAMCET', 'JEE', 'JEE Advanced', 'KCET', 'MHTCET']);
+const VALID_EXAMS = new Set(['TGEAPCET', 'APEAMCET', 'JEE', 'JEE Advanced', 'KCET', 'MHTCET', 'WBJEE', 'COMEDK', 'KEAM', 'TNEA', 'CUET', 'BITSAT', 'NDA']);
 const VALID_GENDERS = new Set(['boys', 'girls']);
 function sanitizeParams(p) {
   if (!p || typeof p !== 'object') return {};
@@ -607,6 +664,21 @@ export async function POST(req) {
       resolved.exam = e.includes('advanced') ? 'JEE Advanced' : 'JEE';
     } else if (e.includes('ap eamcet') || e.includes('apeamcet')) {
       resolved.exam = 'APEAMCET';
+    } else if (e.includes('wbjee') || e.includes('west bengal')) {
+      resolved.exam = 'WBJEE';
+    } else if (e.includes('comedk')) {
+      resolved.exam = 'COMEDK';
+    } else if (e.includes('keam') || e.includes('kerala')) {
+      // Before the KCET check — "keam" contains the substring "kea".
+      resolved.exam = 'KEAM';
+    } else if (e.includes('tnea') || e.includes('tamil')) {
+      resolved.exam = 'TNEA';
+    } else if (e.includes('cuet') || e.includes('csas')) {
+      resolved.exam = 'CUET';
+    } else if (e.includes('bitsat') || e.includes('bits')) {
+      resolved.exam = 'BITSAT';
+    } else if (e.includes('nda') || e.includes('naval academy') || e.includes('national defence')) {
+      resolved.exam = 'NDA';
     } else if (e.includes('kcet') || e.includes('kea')) {
       resolved.exam = 'KCET';
     } else if (e.includes('mht')) {
@@ -664,9 +736,12 @@ export async function POST(req) {
 
   const hasRank = rank != null;
   // Gender is a cutoff axis for the state EAMCET-style exams and JoSAA (female-only
-  // seats), but NOT for KCET / MHT-CET (their category codes are gender-neutral).
-  const genderMatters = exam !== 'KCET' && exam !== 'MHTCET';
-  const hasAllRequired = hasRank && !!category && (genderMatters ? !!gender : true);
+  // seats), but NOT for the gender-neutral exams (KCET/MHTCET + the newer ones).
+  const genderMatters = !GENDERLESS_EXAMS.has(exam);
+  // BITSAT / NDA have no reservation categories, so category isn't a required field.
+  const categoryMatters = !NO_CATEGORY_EXAMS.has(exam);
+  const isScoreExam = SCORE_EXAMS.has(exam);
+  const hasAllRequired = hasRank && (categoryMatters ? !!category : true) && (genderMatters ? !!gender : true);
 
   console.log("RESOLVED:", resolved, "HAS_ALL_REQUIRED:", hasAllRequired);
 
@@ -746,7 +821,7 @@ export async function POST(req) {
   // re-classifies Safe/Borderline against THEIR exact rank — pure code, so no
   // hallucination. A hit skips retrieval AND the extraction LLM call.
   const recommendDeterministic = !wantsAdvice && !generalInfo && !offTopic && !nextgenContext && hasAllRequired && !lookupActive
-    && hasRank && !location_preference;
+    && hasRank && !location_preference && !isScoreExam;
   const rowKey = recommendDeterministic
     ? rowCacheKey({ exam, category, gender, branchPref: branch_preference, rank })
     : null;
@@ -844,6 +919,122 @@ export async function POST(req) {
         const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
         ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(query, 6));
       }
+    } else if (exam === 'WBJEE') {
+      contextLabel = 'WBJEE 2025 Engineering official cutoff data — eligible colleges only';
+      if (lookupActive) {
+        const parts = ['WBJEE 2025 Engineering', target_college, category, branch_preference, 'closing rank'].filter(Boolean);
+        ({ contextBlock, sources: retrievedSources } = await retrieveWbjeeContext(parts.join(' '), 40, { instTokens }));
+      } else if (hasAllRequired) {
+        const catLabel = WBJEE_CATEGORY_CODE[String(category).toUpperCase()] || null;
+        const parts = ['WBJEE 2025 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
+        const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveWbjeeContext(queryStr, RECOMMEND_FULL_TOPK, { rank: retrievalMinRank, category: catLabel, rankMode: true }));
+        if (!contextBlock) {
+          ({ contextBlock, sources: retrievedSources } = await retrieveWbjeeContext(queryStr, RECOMMEND_FULL_TOPK, { rank: null, category: catLabel, rankMode: true }));
+        }
+      } else if (!hasRank) {
+        const parts = ['WBJEE 2025 Engineering', category, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveWbjeeContext(query, 6));
+      }
+    } else if (exam === 'COMEDK') {
+      contextLabel = 'COMEDK 2024 Engineering official cutoff data — eligible colleges only';
+      if (lookupActive) {
+        const parts = ['COMEDK 2024 Engineering', target_college, category, branch_preference, 'closing rank'].filter(Boolean);
+        ({ contextBlock, sources: retrievedSources } = await retrieveComedkContext(parts.join(' '), 40, { instTokens }));
+      } else if (hasAllRequired) {
+        const code = COMEDK_CATEGORY_CODE[String(category).toUpperCase()] || null;
+        const parts = ['COMEDK 2024 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
+        const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveComedkContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
+        if (!contextBlock) {
+          ({ contextBlock, sources: retrievedSources } = await retrieveComedkContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: null, rankMode: true }));
+        }
+      } else if (!hasRank) {
+        const parts = ['COMEDK 2024 Engineering', category, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveComedkContext(query, 6));
+      }
+    } else if (exam === 'KEAM') {
+      contextLabel = 'KEAM 2025 Engineering official last-rank data — eligible colleges only';
+      if (lookupActive) {
+        const parts = ['KEAM 2025 Engineering', target_college, category, branch_preference, 'last rank'].filter(Boolean);
+        ({ contextBlock, sources: retrievedSources } = await retrieveKeamContext(parts.join(' '), 40, { instTokens }));
+      } else if (hasAllRequired) {
+        const code = KEAM_CATEGORY_CODE[String(category).toUpperCase()] || null;
+        const parts = ['KEAM 2025 Engineering', category, `rank ${rank}`, 'eligible colleges last rank', ...prefParts];
+        const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveKeamContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
+        if (!contextBlock) {
+          ({ contextBlock, sources: retrievedSources } = await retrieveKeamContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: null, rankMode: true }));
+        }
+      } else if (!hasRank) {
+        const parts = ['KEAM 2025 Engineering', category, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveKeamContext(query, 6));
+      }
+    } else if (exam === 'TNEA') {
+      // Score-based (mark out of 200; higher is better). Routed conversationally.
+      // NOTE: this dataset covers only BArch + Vocational (no B.E./B.Tech).
+      contextLabel = 'TNEA 2024 official mark-cutoff data (BArch/Vocational) — eligible colleges';
+      if (lookupActive) {
+        const parts = ['TNEA 2024', target_college, category, branch_preference, 'cutoff marks'].filter(Boolean);
+        ({ contextBlock, sources: retrievedSources } = await retrieveTneaContext(parts.join(' '), 40, { instTokens }));
+      } else if (hasRank) {
+        const code = TNEA_CATEGORY_CODE[String(category || '').toUpperCase()] || null;
+        const parts = ['TNEA 2024', category, `cutoff mark ${rank}`, 'eligible colleges', ...prefParts];
+        const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveTneaContext(queryStr, 40, { markField: code, studentMark: rank, instTokens }));
+        if (!contextBlock) {
+          ({ contextBlock, sources: retrievedSources } = await retrieveTneaContext(queryStr, 40, { instTokens }));
+        }
+      } else {
+        const parts = ['TNEA 2024', category, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveTneaContext(query, 6));
+      }
+    } else if (exam === 'CUET') {
+      // Score-based (CUET score; higher is better). Routed conversationally.
+      contextLabel = 'CUET UG 2025 Delhi University official closing-score data — eligible programmes';
+      if (lookupActive) {
+        const parts = ['CUET 2025 Delhi University', target_college, category, branch_preference, 'closing score'].filter(Boolean);
+        ({ contextBlock, sources: retrievedSources } = await retrieveCuetContext(parts.join(' '), 40, { instTokens }));
+      } else if (hasRank) {
+        const code = CUET_CATEGORY_CODE[String(category || '').toUpperCase()] || null;
+        const parts = ['CUET 2025 Delhi University', category, `score ${rank}`, 'eligible programmes', ...prefParts];
+        const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveCuetContext(queryStr, 40, { catField: code, studentScore: rank, instTokens }));
+        if (!contextBlock) {
+          ({ contextBlock, sources: retrievedSources } = await retrieveCuetContext(queryStr, 40, { instTokens }));
+        }
+      } else {
+        const parts = ['CUET 2025 Delhi University', category, ...prefParts];
+        const query = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveCuetContext(query, 6));
+      }
+    } else if (exam === 'BITSAT') {
+      // Score-based (BITSAT score; higher is better), no reservation categories.
+      contextLabel = 'BITSAT 2025-26 official cutoff-score data — eligible programmes';
+      if (lookupActive) {
+        const parts = ['BITSAT 2025', target_college, branch_preference, 'cutoff score'].filter(Boolean);
+        ({ contextBlock, sources: retrievedSources } = await retrieveBitsatContext(parts.join(' '), 40, { instTokens }));
+      } else if (hasRank) {
+        const parts = ['BITSAT 2025', `score ${rank}`, 'eligible programmes', ...prefParts];
+        const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveBitsatContext(queryStr, 40, { studentScore: rank, instTokens }));
+        if (!contextBlock) {
+          ({ contextBlock, sources: retrievedSources } = await retrieveBitsatContext(queryStr, 40, { instTokens }));
+        }
+      } else {
+        const parts = ['BITSAT 2025', branch_preference, location_preference].filter(Boolean);
+        const query = parts.length ? parts.join(' ') + ' ' + message : message;
+        ({ contextBlock, sources: retrievedSources } = await retrieveBitsatContext(query, 6));
+      }
+    } else if (exam === 'NDA') {
+      // Info-only: aggregate national cut-offs, no colleges. Always a semantic
+      // fetch over the year×session chunks; the conversational model answers.
+      contextLabel = 'NDA & NA official written/final cut-offs (national exam data)';
+      ({ contextBlock, sources: retrievedSources } = await retrieveNdaContext(`NDA NA cut-off ${message}`, 8));
     } else {
       // Default: TGEAPCET (Telangana) — also covers exam === null / 'TGEAPCET'.
       if (lookupActive) {
@@ -919,7 +1110,9 @@ export async function POST(req) {
   // An advice question routes to the conversational model even with a full
   // profile, so it gets a real answer (grounded in `contextBlock`) instead of a
   // Safe/Borderline table.
-  const useDeterministic = !wantsAdvice && (!!contextBlock || !!cachedRows) && (lookupReady || (hasAllRequired && !lookupActive));
+  // Score-based exams (TNEA/CUET/BITSAT) never use the rank-proximity builder —
+  // their cut-offs are "higher is better", so they answer conversationally.
+  const useDeterministic = !wantsAdvice && !isScoreExam && (!!contextBlock || !!cachedRows) && (lookupReady || (hasAllRequired && !lookupActive));
   if (useDeterministic) {
     try {
       const isJee = exam === 'JEE' || exam === 'JEE Advanced';
