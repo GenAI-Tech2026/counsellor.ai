@@ -1,3 +1,8 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Keep these out of the bundler and require them from node_modules at runtime.
@@ -11,6 +16,65 @@ const nextConfig = {
   //     WASM backend and was never actually exercised at runtime on Vercel (the
   //     embedding path used a hosted API that has since been retired).
   serverExternalPackages: ['@supabase/supabase-js', 'onnxruntime-node'],
+
+  // Force @xenova/transformers to be BUNDLED (transpiled) rather than loaded as a
+  // runtime-external node_modules module. Next externalizes it by default, which
+  // means its internal `import 'sharp'` resolves through Node's own resolver and
+  // BYPASSES the `sharp` alias below — so the broken native sharp binary still
+  // loaded and threw. Bundling routes that import through the bundler, where the
+  // alias replaces sharp with our stub. onnxruntime-node stays external (above)
+  // so its native binary is traced, not bundled.
+  transpilePackages: ['@xenova/transformers'],
+
+  // Bundle the on-device embedding model into the /api/chat serverless function.
+  // lib/embeddings.mjs loads `bge-small-en-v1.5` from `models/` on disk (never the
+  // network — see the comment there). Output File Tracing does NOT pick these up
+  // automatically because they're read at runtime by path, not `require`d, so we
+  // include the folder explicitly. Without this the model is absent in the
+  // deployed function → embedText throws → retrieval fails → the chat replies
+  // "temporary problem looking up colleges".
+  outputFileTracingIncludes: {
+    '/api/chat': [
+      './models/**/*',
+      // The onnxruntime-node native binding (`onnxruntime_binding.node`) IS traced
+      // automatically, but the shared library it dlopen()s at runtime
+      // (`libonnxruntime.so.*`) is NOT — nothing `require`s it, so File Tracing
+      // can't see it, and it gets dropped from the deployed function. Result on
+      // Vercel: the binding loads, then fails to resolve its .so → the ONNX
+      // backend throws → embedText throws → retrieval fails → "temporary problem
+      // looking up colleges". Force-include the whole linux native dir (x64 +
+      // arm64, glob so a version bump of the .so keeps matching).
+      './node_modules/onnxruntime-node/bin/napi-v3/linux/**/*',
+    ],
+  },
+
+  // Drop `sharp` from the bundle. @xenova/transformers (our on-device text-
+  // embedding backend) statically `import`s sharp in utils/image.js for IMAGE
+  // decoding only — a path we never hit — but that import eagerly loads a native
+  // .node binary that isn't reliably present on Vercel, so the import alone threw
+  // and broke retrieval ("temporary problem looking up colleges"). Alias it to a
+  // truthy stub (lib/sharp-stub.cjs) so image.js loads without any native binary
+  // while text feature-extraction runs normally. sharp is never imported into
+  // the client bundle, and Next's own image optimizer loads the real sharp at
+  // runtime (outside this bundle), so next/image is unaffected.
+  //
+  // Next 16 builds with Turbopack by default (which IGNORES the `webpack` hook),
+  // so the alias lives in BOTH places: `turbopack.resolveAlias` for the default
+  // build, and the `webpack` hook below for a `next build --webpack` fallback.
+  turbopack: {
+    resolveAlias: {
+      sharp: './lib/sharp-stub.cjs',
+    },
+  },
+  webpack(config, { isServer }) {
+    if (isServer) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        sharp: path.resolve(__dirname, 'lib/sharp-stub.cjs'),
+      };
+    }
+    return config;
+  },
 
   // Hide the Next.js dev server indicator that overlaps the mobile UI
   devIndicators: {
