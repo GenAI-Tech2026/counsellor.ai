@@ -12,6 +12,28 @@ const nextConfig = {
   //     embedding path used a hosted API that has since been retired).
   serverExternalPackages: ['@supabase/supabase-js', 'onnxruntime-node'],
 
+  // Bundle the on-device embedding model into the /api/chat serverless function.
+  // lib/embeddings.mjs loads `bge-small-en-v1.5` from `models/` on disk (never the
+  // network — see the comment there). Output File Tracing does NOT pick these up
+  // automatically because they're read at runtime by path, not `require`d, so we
+  // include the folder explicitly. Without this the model is absent in the
+  // deployed function → embedText throws → retrieval fails → the chat replies
+  // "temporary problem looking up colleges".
+  outputFileTracingIncludes: {
+    '/api/chat': [
+      './models/**/*',
+      // The onnxruntime-node native binding (`onnxruntime_binding.node`) IS traced
+      // automatically, but the shared library it dlopen()s at runtime
+      // (`libonnxruntime.so.*`) is NOT — nothing `require`s it, so File Tracing
+      // can't see it, and it gets dropped from the deployed function. Result on
+      // Vercel: the binding loads, then fails to resolve its .so → the ONNX
+      // backend throws → embedText throws → retrieval fails → "temporary problem
+      // looking up colleges". Force-include the whole linux native dir (x64 +
+      // arm64, glob so a version bump of the .so keeps matching).
+      './node_modules/onnxruntime-node/bin/napi-v3/linux/**/*',
+    ],
+  },
+
   // Hide the Next.js dev server indicator that overlaps the mobile UI
   devIndicators: {
     buildActivityPosition: 'top-right',
