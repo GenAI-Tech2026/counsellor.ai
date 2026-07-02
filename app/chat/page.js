@@ -189,7 +189,7 @@ function nextQuestion(profile, skipped) {
 
 // ── New-age tech college recommendations ──
 // Shown to strong / good rankers (not only the very top): for them we surface a
-// curated set of new-age tech colleges (NIAT, Scaler, Polaris, …). These admit
+// curated set of new-age tech colleges (NIAT, Scaler, Polaris). These admit
 // through their OWN application process — they're not part of the state/JoSAA
 // cutoff corpus — so this is a hand-picked UI section, not a retrieval result.
 // Thresholds are generous ("good student" band) and easy to tune per exam.
@@ -228,22 +228,6 @@ const TOPPER_COLLEGES = [
     location: 'Bengaluru',
     tag: 'AI-first B.Tech',
     desc: 'B.Tech with an AI-first, practice-heavy curriculum and global exposure.',
-  },
-  {
-    key: 'newton',
-    name: 'Newton School of Technology',
-    full: 'Newton School of Technology (Rishihood University)',
-    location: 'Sonipat / Pune',
-    tag: 'Industry B.Tech',
-    desc: 'B.Tech in CS/AI co-designed with tech companies and focused on placements.',
-  },
-  {
-    key: 'plaksha',
-    name: 'Plaksha University',
-    full: 'Plaksha University',
-    location: 'Mohali',
-    tag: 'Deep-tech',
-    desc: 'Research-driven, interdisciplinary deep-tech undergraduate engineering.',
   },
 ];
 
