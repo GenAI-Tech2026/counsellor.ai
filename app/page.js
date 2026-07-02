@@ -135,7 +135,7 @@ export default function Home() {
               <button className={styles.primaryBtn} style={{height: '100%'}}>Find Colleges</button>
             </Link>
           </motion.div>
-          <motion.div variants={fadeUp} className={styles.noCreditCard}>100% free • No signup required</motion.div>
+          <motion.div variants={fadeUp} className={styles.noCreditCard}>100% free • No Payment Required</motion.div>
         </motion.div>
 
         <motion.div 
