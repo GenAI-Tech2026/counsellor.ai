@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 import { SITE_URL } from '@/lib/site';
 
 // Generates /sitemap.xml. Lists the public, indexable pages so search engines
@@ -9,10 +10,20 @@ export default function sitemap() {
     {
       url: SITE_URL,
       lastModified: now,
+=======
+export default function sitemap() {
+  const baseUrl = 'https://www.counsa.ai';
+  
+  return [
+    {
+      url: baseUrl,
+      lastModified: new Date(),
+>>>>>>> Stashed changes
       changeFrequency: 'weekly',
       priority: 1,
     },
     {
+<<<<<<< Updated upstream
       url: `${SITE_URL}/chat`,
       lastModified: now,
       changeFrequency: 'weekly',
@@ -25,4 +36,24 @@ export default function sitemap() {
       priority: 0.3,
     },
   ];
+=======
+      url: `${baseUrl}/chat`,
+      lastModified: new Date(),
+      changeFrequency: 'daily',
+      priority: 0.9,
+    },
+    {
+      url: `${baseUrl}/login`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.8,
+    },
+    {
+      url: `${baseUrl}/profile`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.8,
+    }
+  ]
+>>>>>>> Stashed changes
 }

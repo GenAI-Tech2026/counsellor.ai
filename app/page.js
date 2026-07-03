@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { motion, useScroll, useTransform, useMotionValueEvent, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
 import { ArrowRight, GraduationCap, Sparkles, MessageSquare, Database, Search, CheckCircle2 } from 'lucide-react';
@@ -102,7 +103,7 @@ export default function Home() {
         transition={{ duration: 0.5 }}
       >
         <div className={styles.logo}>
-          <img src="/branding/counsa_logo_mini.png" alt="Counsa.ai Logo" style={{height: '28px', width: 'auto', borderRadius: '4px'}} />
+          <Image src="/branding/counsa_logo_mini.png" alt="Counsa.ai Logo" width={28} height={28} style={{height: '28px', width: 'auto', borderRadius: '4px'}} />
           Counsa.ai
         </div>
         <nav className={styles.nav}>
@@ -147,7 +148,7 @@ export default function Home() {
           <div className={styles.heroUiMockup} style={{flexDirection: 'column', padding: '0', textAlign: 'left'}}>
             {/* Chat Header */}
             <div style={{borderBottom: '1px solid #eee', padding: '1rem', background: '#fafafa', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600'}}>
-              <img src="/branding/counsa_logo_mini.png" alt="Counsa.ai Logo" style={{height: '24px', width: 'auto', borderRadius: '4px'}} />
+              <Image src="/branding/counsa_logo_mini.png" alt="Counsa.ai Logo" width={24} height={24} style={{height: '24px', width: 'auto', borderRadius: '4px'}} />
               Counsa.ai
             </div>
             {/* Chat Body */}
@@ -382,7 +383,7 @@ export default function Home() {
       <footer className={styles.footer}>
         <div>
           <div className={styles.logo} style={{marginBottom: '1rem'}}>
-            <img src="/branding/counsa_logo_mini.png" alt="Counsa.ai Logo" style={{height: '28px', width: 'auto', borderRadius: '4px'}} />
+            <Image src="/branding/counsa_logo_mini.png" alt="Counsa.ai Logo" width={28} height={28} style={{height: '28px', width: 'auto', borderRadius: '4px'}} />
             Counsa.ai
           </div>
           <p style={{color: '#666', fontSize: '0.9rem'}}>© 2026 Counsa.ai<br/>Built for engineering aspirants.</p>

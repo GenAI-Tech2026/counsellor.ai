@@ -21,6 +21,7 @@ const SOCIAL_LINKS = [
 ];
 
 export const metadata = {
+<<<<<<< Updated upstream
   metadataBase: new URL(SITE_URL),
   title: "counsa.ai — AI Admission Counsellor",
   description:
@@ -47,6 +48,42 @@ export const metadata = {
     description:
       "A chat-based AI counsellor that instantly finds eligible engineering colleges based on your rank, category, and gender.",
     images: ["/branding/android-chrome-512x512.png"],
+=======
+  title: "Counsa AI - Your Personal AI Admission Counsellor",
+  description:
+    "Counsa instantly analyzes your rank, category, and state to recommend the perfect colleges—combining 15 years of expert counselling with an IITian's judgment. Get expert guidance for engineering and medical admissions.",
+  keywords: ["counsa", "counsa ai", "counsellor ai", "AI admission counsellor", "college predictor", "JEE rank predictor", "NEET college predictor", "EAMCET predictor", "engineering admissions", "medical admissions"],
+  authors: [{ name: "Counsa AI" }],
+  creator: "Counsa AI",
+  publisher: "Counsa AI",
+  metadataBase: new URL('https://www.counsa.ai'),
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    title: "Counsa AI - Your Personal AI Admission Counsellor",
+    description: "Instantly analyzes your rank, category, and state to recommend the perfect colleges.",
+    url: 'https://www.counsa.ai',
+    siteName: 'Counsa AI',
+    locale: 'en_IN',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: "Counsa AI - AI Admission Counsellor",
+    description: "Instantly analyzes your rank, category, and state to recommend the perfect colleges.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+>>>>>>> Stashed changes
   },
   icons: {
     icon: [
