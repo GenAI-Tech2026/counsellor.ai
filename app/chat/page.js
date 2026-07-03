@@ -103,6 +103,8 @@ function readRateRemaining(res) {
 // / gender once, and those flow to the server as `priorParams` so the bot uses
 // them directly instead of asking each in chat. Values match the server's enums;
 // category options depend on the chosen exam.
+// All 13 supported exams. `value` MUST match the server's VALID_EXAMS enum
+// (see app/api/chat/route.js) so the picked exam flows through as priorParams.
 const EXAM_CHOICES = [
   { value: 'TGEAPCET', label: 'TGEAPCET' },
   { value: 'APEAMCET', label: 'AP EAPCET' },
@@ -110,7 +112,19 @@ const EXAM_CHOICES = [
   { value: 'JEE Advanced', label: 'JEE Advanced' },
   { value: 'KCET', label: 'KCET' },
   { value: 'MHTCET', label: 'MHT-CET' },
+  { value: 'WBJEE', label: 'WBJEE' },
+  { value: 'COMEDK', label: 'COMEDK' },
+  { value: 'KEAM', label: 'KEAM' },
+  { value: 'TNEA', label: 'TNEA' },
+  { value: 'CUET', label: 'CUET (DU)' },
+  { value: 'BITSAT', label: 'BITSAT' },
+  { value: 'NDA', label: 'NDA & NA' },
 ];
+// Category options per exam. Each entry is a plain code (value === label) or a
+// { value, label } pair when a friendlier label helps. The `value` MUST be a
+// recognised key in that exam's category map in lib/rag.js so retrieval finds
+// the right cutoff column. Exams with no reservation axis (COMEDK is General-
+// only; BITSAT/NDA have none) are handled by examNeedsCategory below.
 const CATEGORY_CHOICES = {
   TGEAPCET: ['OC', 'BC-A', 'BC-B', 'BC-C', 'BC-D', 'BC-E', 'SC-I', 'SC-II', 'SC-III', 'ST', 'EWS'],
   APEAMCET: ['OC', 'BC-A', 'BC-B', 'BC-C', 'BC-D', 'BC-E', 'SC', 'ST', 'EWS'],
@@ -118,16 +132,62 @@ const CATEGORY_CHOICES = {
   'JEE Advanced': ['OPEN', 'OBC-NCL', 'SC', 'ST', 'EWS'],
   KCET: ['GM', '1', '2A', '2B', '3A', '3B', 'SC', 'ST'],
   MHTCET: ['General', 'OBC', 'SC', 'ST', 'EWS', 'VJ', 'NT1', 'NT2', 'NT3', 'SEBC'],
+  WBJEE: ['OPEN', 'OBC-A', 'OBC-B', 'SC', 'ST', 'EWS', 'TFW'],
+  COMEDK: [{ value: 'GM', label: 'General Merit' }],
+  KEAM: [
+    { value: 'SM', label: 'General (SM)' },
+    { value: 'EZ', label: 'Ezhava (EZ)' },
+    { value: 'MU', label: 'Muslim (MU)' },
+    'SC', 'ST', 'EWS',
+    { value: 'BH', label: 'Backward Hindu (BH)' },
+    { value: 'LA', label: 'Latin Catholic (LA)' },
+    { value: 'DV', label: 'Dheevara (DV)' },
+  ],
+  TNEA: ['OC', 'BC', 'BCM', 'MBC', 'SC', 'SCA', 'ST'],
+  CUET: [{ value: 'UR', label: 'UR (General)' }, 'OBC', 'SC', 'ST', 'EWS', { value: 'PWBD', label: 'PwBD' }],
+  // BITSAT & NDA: no reservation category (see examNeedsCategory).
 };
-// KCET / MHT-CET cutoffs aren't split by gender.
+// Normalize a category entry (plain code or {value,label}) to an option object.
+function catOption(c) {
+  return typeof c === 'string' ? { value: c, label: c } : c;
+}
+
+// These mirror the server's GENDERLESS_EXAMS / NO_CATEGORY_EXAMS sets and the
+// info-only NDA exam, so the guided flow asks exactly the fields each exam uses.
+const GENDERLESS_EXAMS = new Set(['KCET', 'MHTCET', 'WBJEE', 'COMEDK', 'KEAM', 'TNEA', 'CUET', 'BITSAT', 'NDA']);
+const NO_CATEGORY_EXAMS = new Set(['BITSAT', 'NDA']);
+const NO_RANK_EXAMS = new Set(['NDA']); // aggregate info-only exam — no personal rank/score
+
+// Gender is a cutoff axis only for the state EAMCET-style exams + JoSAA.
 function examNeedsGender(exam) {
-  return Boolean(exam) && exam !== 'KCET' && exam !== 'MHTCET';
+  return Boolean(exam) && !GENDERLESS_EXAMS.has(exam);
+}
+function examNeedsCategory(exam) {
+  return Boolean(exam) && !NO_CATEGORY_EXAMS.has(exam);
+}
+function examNeedsRank(exam) {
+  return Boolean(exam) && !NO_RANK_EXAMS.has(exam);
 }
 
 // Guided question flow (Claude-style): instead of showing every input at once,
 // we ask one question at a time with clickable options. Each step maps to a
 // profile field; `optionsFor` derives choices from earlier answers, and
 // `showIf` skips a step when it doesn't apply (e.g. gender for KCET).
+// Score-based exams collect a MARK/SCORE (higher is better), not a rank. The
+// guided "rank" step is relabelled for these so the popup asks for the right
+// number, uses a fitting placeholder, and the message we send reads naturally
+// ("My BITSAT score is 320." rather than "My rank is 320.").
+const SCORE_EXAM_INPUT = {
+  BITSAT: { title: 'What is your BITSAT score?', placeholder: 'e.g. 320', noun: 'BITSAT score' },
+  CUET: { title: 'What is your CUET score?', placeholder: 'e.g. 720', noun: 'CUET score' },
+  TNEA: { title: 'What is your TNEA cutoff mark (out of 200)?', placeholder: 'e.g. 195', noun: 'TNEA cutoff mark' },
+};
+const RANK_INPUT_DEFAULT = { title: 'What rank did you score?', placeholder: 'e.g. 12000', noun: 'rank' };
+// Label for the "rank" step, adapted to the exam (score vs rank).
+function rankInputFor(profile) {
+  return SCORE_EXAM_INPUT[profile?.exam] || RANK_INPUT_DEFAULT;
+}
+
 const QUESTIONS = [
   {
     key: 'exam',
@@ -139,11 +199,13 @@ const QUESTIONS = [
     title: 'What rank did you score?',
     type: 'number',
     placeholder: 'e.g. 12000',
+    showIf: (p) => examNeedsRank(p?.exam),
   },
   {
     key: 'category',
     title: 'Which category do you fall under?',
-    optionsFor: (p) => (CATEGORY_CHOICES[p?.exam] || []).map((c) => ({ value: c, label: c })),
+    optionsFor: (p) => (CATEGORY_CHOICES[p?.exam] || []).map(catOption),
+    showIf: (p) => examNeedsCategory(p?.exam),
   },
   {
     key: 'gender',
@@ -271,7 +333,9 @@ function botAskedKey(text) {
   if (/\b(exam|entrance|counsell?ing)\b/.test(t)) return 'exam';
   if (/\b(categor|caste|reservation)\b/.test(t)) return 'category';
   if (/\bgender\b/.test(t) || /(boys?\s*(or|\/|,)\s*girls?|male\s*(or|\/)\s*female)/.test(t)) return 'gender';
-  if (/\b(rank|merit)\b/.test(t)) return 'rank';
+  // "score"/"mark(s)" cover the score-based exams (BITSAT/CUET/TNEA), where the
+  // bot asks for a score/mark rather than a rank — same profile field.
+  if (/\b(rank|merit|score|marks?)\b/.test(t)) return 'rank';
   return null;
 }
 
@@ -710,8 +774,10 @@ export default function ChatPage() {
       const next = { ...(prev || {}) };
       next[key] = value === '' || value == null ? null : value;
       if (key === 'exam') {
-        const cats = CATEGORY_CHOICES[value] || [];
-        if (next.category && !cats.includes(next.category)) next.category = null;
+        // Drop a now-invalid category/gender when the exam changes so the guided
+        // flow re-asks them for the new exam's own options.
+        const cats = (CATEGORY_CHOICES[value] || []).map(catOption).map((o) => o.value);
+        if (next.category && (!examNeedsCategory(value) || !cats.includes(next.category))) next.category = null;
         if (!examNeedsGender(value)) next.gender = null;
       }
       return next;
@@ -940,7 +1006,8 @@ export default function ChatPage() {
       const label = EXAM_CHOICES.find((o) => o.value === value)?.label ?? value;
       text = `My entrance exam is ${label}.`;
     } else if (question.key === 'rank') {
-      text = `My rank is ${value}.`;
+      // Score exams (BITSAT/CUET/TNEA) give a score/mark, not a rank.
+      text = `My ${rankInputFor(profile).noun} is ${value}.`;
     } else if (question.key === 'gender') {
       text = value === 'girls' ? 'I am applying under Girls.' : 'I am applying under Boys.';
     } else if (question.key === 'category') {
@@ -1226,6 +1293,11 @@ export default function ChatPage() {
   const popupOptions = popupQuestion
     ? (popupQuestion.optionsFor ? popupQuestion.optionsFor(profile) : popupQuestion.options || [])
     : [];
+  // The "rank" step is relabelled for score-based exams (score/mark, not rank),
+  // so the popup prompt + placeholder match what the student actually enters.
+  const rankInput = popupQuestion?.key === 'rank' ? rankInputFor(profile) : null;
+  const popupTitle = rankInput ? rankInput.title : popupQuestion?.title;
+  const popupPlaceholder = rankInput ? rankInput.placeholder : popupQuestion?.placeholder;
 
   // Quick-reply popover rises from the input bar (so it catches the eye) when
   // the bot is asking and the user hasn't dismissed it for the current turn.
@@ -1233,9 +1305,9 @@ export default function ChatPage() {
     && messages.length !== popupDismissedAt;
   const chatQuestionPopup = showQuestionPopup && (
     <div className={styles.qPopup}>
-      <div className={`${styles.qCard} ${styles.qPopupCard}`} role="group" aria-label={popupQuestion.title}>
+      <div className={`${styles.qCard} ${styles.qPopupCard}`} role="group" aria-label={popupTitle}>
         <div className={styles.qHead}>
-          <span className={styles.qTitle}>{popupQuestion.title}</span>
+          <span className={styles.qTitle}>{popupTitle}</span>
           <button
             type="button"
             className={styles.qClose}
@@ -1265,7 +1337,7 @@ export default function ChatPage() {
               type="number"
               min="1"
               inputMode="numeric"
-              placeholder={popupQuestion.placeholder}
+              placeholder={popupPlaceholder}
               className={styles.qNumberInput}
               value={rankDraft}
               onChange={(e) => setRankDraft(e.target.value)}
@@ -1648,7 +1720,7 @@ export default function ChatPage() {
             </motion.div>
 
             <motion.p variants={fadeUp} className={styles.disclaimer}>
-              Data from official TGEAPCET, AP EAPCET, JEE Main & Advanced, KCET & MHT-CET cutoffs. For reference only.
+              Data from official TGEAPCET, AP EAPCET, JEE Main & Advanced, KCET, MHT-CET, WBJEE, COMEDK, KEAM, TNEA, CUET, BITSAT & NDA sources. For reference only.
             </motion.p>
           </div>
         </motion.main>

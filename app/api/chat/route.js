@@ -1198,7 +1198,7 @@ ${closingRule}
     // no records for this category): answer deterministically. Without this, the
     // empty context falls to the conversational model, which can improvise a
     // misleading table from earlier turns in the chat history.
-    if (!offTopic && !wantsAdvice && !generalInfo && !nextgenContext && !contextBlock && hasAllRequired && !lookupActive) {
+    if (!offTopic && !wantsAdvice && !generalInfo && !nextgenContext && !contextBlock && hasAllRequired && !lookupActive && !isScoreExam) {
       // Retrieval THREW (embedding/DB error) → don't claim there are no matching
       // colleges (there almost certainly are). Ask the student to retry.
       if (retrievalFailed) {

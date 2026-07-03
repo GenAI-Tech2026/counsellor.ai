@@ -172,7 +172,7 @@ export default function Home() {
                 <div style={{fontWeight: 'bold', marginBottom: '0.5rem', color: '#ff7e5f', display: 'flex', alignItems: 'center', gap: '4px'}}>
                   <Sparkles size={14} /> AI Analysis
                 </div>
-                <Typewriter text="Based on the 2024 cutoff data, here are the top colleges for CSE where you are eligible:" delay={2400} speed={15} />
+                <Typewriter text="Based on the most recent available data, here are the top colleges for CSE where you are eligible:" delay={2400} speed={15} />
                 <motion.ul 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -196,8 +196,8 @@ export default function Home() {
         <div className={styles.marqueeContainer}>
           <div className={styles.marqueeTrack}>
             {[
-              'JEE Main', 'JEE Advanced', 'BITSAT', 'VITEEE', 'SRMJEEE', 'COMEDK', 
-              'WBJEE', 'MHTCET', 'KCET', 'TGEAPCET', 'APEAMCET', 'GUJCET', 'CUET', 'NEET'
+              'JEE Main', 'JEE Advanced', 'BITSAT', 'COMEDK', 'KEAM', 'TNEA',
+              'WBJEE', 'MHTCET', 'KCET', 'TGEAPCET', 'AP EAMCET', 'CUET', 'NDA'
             ].map((exam, i) => (
               <div key={`exam-1-${i}`} className={styles.logoItem}>
                 <CheckCircle2 size={18} />
@@ -205,8 +205,8 @@ export default function Home() {
               </div>
             ))}
             {[
-              'JEE Main', 'JEE Advanced', 'BITSAT', 'VITEEE', 'SRMJEEE', 'COMEDK', 
-              'WBJEE', 'MHTCET', 'KCET', 'TGEAPCET', 'APEAMCET', 'GUJCET', 'CUET', 'NEET'
+              'JEE Main', 'JEE Advanced', 'BITSAT', 'COMEDK', 'KEAM', 'TNEA',
+              'WBJEE', 'MHTCET', 'KCET', 'TGEAPCET', 'AP EAMCET', 'CUET', 'NDA'
             ].map((exam, i) => (
               <div key={`exam-2-${i}`} className={styles.logoItem}>
                 <CheckCircle2 size={18} />
