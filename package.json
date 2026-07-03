@@ -13,6 +13,13 @@
     "ingest:apeamcet": "node scripts/ingest-apeamcet.mjs",
     "ingest:kcet": "node scripts/ingest-kcet.mjs",
     "ingest:mhtcet": "node scripts/ingest-mhtcet.mjs",
+    "ingest:wbjee": "node scripts/ingest-wbjee.mjs",
+    "ingest:comedk": "node scripts/ingest-comedk.mjs",
+    "ingest:keam": "node scripts/ingest-keam.mjs",
+    "ingest:tnea": "node scripts/ingest-tnea.mjs",
+    "ingest:cuet": "node scripts/ingest-cuet.mjs",
+    "ingest:bitsat": "node scripts/ingest-bitsat.mjs",
+    "ingest:nda": "node scripts/ingest-nda.mjs",
     "test:e2e": "node tests/e2e.mjs",
     "dev:all": "next dev"
   },
