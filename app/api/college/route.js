@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { checkRateLimit, checkGlobalBudget, MAX_PER_HOUR, GUEST_MAX_PER_HOUR } from '@/lib/ratelimit';
 import { createClient } from '@/lib/supabase/server';
+import { clientIp } from '@/lib/client-ip';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-for-build');
 
@@ -41,17 +42,6 @@ const COLLEGES = {
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_HTML_BYTES = 800_000;
 const MAX_TEXT_CHARS = 6000;
-
-const clientIp = (req) => {
-  const real = req.headers.get('x-real-ip');
-  if (real) return real.trim();
-  const xff = req.headers.get('x-forwarded-for');
-  if (xff) {
-    const hops = xff.split(',').map((s) => s.trim()).filter(Boolean);
-    if (hops.length) return hops[hops.length - 1];
-  }
-  return 'unknown';
-};
 
 // Pull a readable text digest out of raw HTML: drop scripts/styles, capture the
 // <title> + meta description, strip the remaining tags, decode a few common

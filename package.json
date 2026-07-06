@@ -21,7 +21,9 @@
     "ingest:bitsat": "node scripts/ingest-bitsat.mjs",
     "ingest:nda": "node scripts/ingest-nda.mjs",
     "test:e2e": "node tests/e2e.mjs",
-    "dev:all": "next dev"
+    "dev:all": "next dev",
+    "embed:serve": "node services/embed/server.mjs",
+    "check:embed-parity": "node scripts/check-embed-parity.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
