@@ -21,6 +21,8 @@ import {
   cacheMetrics,
 } from '@/lib/answer-cache';
 import { detectNextgen, formatNextgenContext } from '@/lib/nextgen';
+import { emitChatSpan } from '@/lib/trace';
+import { clientIp } from '@/lib/client-ip';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-for-build');
 
@@ -352,21 +354,7 @@ function looksLikeFollowUp(msg) {
 const MAX_MESSAGE_CHARS = 8000;
 const MAX_HISTORY_ITEMS = 100;
 
-/**
- * Trusted client IP. The leftmost x-forwarded-for entry is client-CLAIMED and
- * spoofable; rate-limiting on it lets a caller mint unlimited guest buckets.
- * Prefer the platform-set `x-real-ip`, else the LAST (closest-proxy) hop.
- */
-function clientIp(req) {
-  const real = req.headers.get('x-real-ip');
-  if (real) return real.trim();
-  const xff = req.headers.get('x-forwarded-for');
-  if (xff) {
-    const hops = xff.split(',').map(s => s.trim()).filter(Boolean);
-    if (hops.length) return hops[hops.length - 1];
-  }
-  return 'unknown';
-}
+// Trusted client IP for guest rate-limit keying — see lib/client-ip.js.
 
 // `priorParams` comes from the client, so never trust its shape: whitelist the
 // fields and bound the values before they reach retrieval / the cache key.
@@ -1202,6 +1190,7 @@ ${closingRule}
       }
       mark('extract');
       if (timing) console.log('[chat] deterministic', JSON.stringify(marks));
+      emitChatSpan({ outcome: 'deterministic', exam, intent, total: Date.now() - t0, marks });
 
       const finalText = lookupReady
         ? buildLookupAnswer(rows, { catLabel, collegeName: target_college, branchPref: branch_preference, rank })
@@ -1274,6 +1263,7 @@ ${closingRule}
         }
         if (serve) {
           if (timing) console.log('[cache] tier2 hit', { exam, score: hit.score });
+          emitChatSpan({ outcome: 'tier2_hit', exam, intent, cache: 'tier2', total: Date.now() - t0, marks });
           const out = new TextEncoder().encode(answer);
           const stream = new ReadableStream({ start(c) { c.enqueue(out); c.close(); } });
           return new Response(stream, {
@@ -1304,7 +1294,7 @@ ${closingRule}
           for await (const chunk of geminiStream.stream) {
             const text = chunk.text();
             if (text) {
-              if (first) { first = false; mark('first_token'); if (timing) console.log('[chat] first_token', marks.first_token + 'ms'); }
+              if (first) { first = false; mark('first_token'); if (timing) console.log('[chat] first_token', marks.first_token + 'ms'); emitChatSpan({ outcome: 'stream_first_token', exam, intent, total: Date.now() - t0, marks }); }
               full += text;
               controller.enqueue(encoder.encode(text));
             }
