@@ -99,6 +99,14 @@ const NO_CATEGORY_EXAMS = new Set(['BITSAT', 'NDA']);
 // grounded in the retrieved real cut-off context.
 const SCORE_EXAMS = new Set(['TNEA', 'CUET', 'BITSAT', 'NDA']);
 
+// User-facing names (no year/cycle, per the no-date-reveal rule) for the
+// rank-only exams, used to word the "please give your rank, not marks" reply.
+const EXAM_LABEL = {
+  TGEAPCET: 'TGEAPCET', APEAMCET: 'APEAMCET (AP EAPCET)', JEE: 'JEE Main',
+  'JEE Advanced': 'JEE Advanced', KCET: 'KCET', MHTCET: 'MHT-CET',
+  WBJEE: 'WBJEE', COMEDK: 'COMEDK', KEAM: 'KEAM', NDA: 'NDA',
+};
+
 // For the "recommend colleges for my rank" path we pull the FULL eligible set
 // (rank-mode) so the deterministic builder can pick the colleges whose closing
 // rank is genuinely CLOSEST to the student's — a cutoff-proximity task that a
@@ -201,8 +209,11 @@ JSON schema (null for anything not mentioned):
   "branch_preference": <plain English or null>,
   "location_preference": <city/district/institute name or null>,
   "target_college": <specific named college/university the student is asking the cutoff FOR, or null>,
-  "intent": <"list_colleges" | "advice" | "college_lookup" | "general_info" | "off_topic" | "smalltalk" | null>
+  "intent": <"list_colleges" | "advice" | "college_lookup" | "general_info" | "off_topic" | "smalltalk" | null>,
+  "marks_confusion": <true if the RANK-vs-MARKS rule below applies to the LATEST message, else false>
 }
+
+RANK vs MARKS: TGEAPCET, APEAMCET, JEE, JEE Advanced, KCET, MHTCET, WBJEE, COMEDK, KEAM and NDA are RANK-only exams — we have no marks/score data for them (TNEA, CUET and BITSAT are the exception — those genuinely ARE marks/score exams, so ignore this rule for them). If the LATEST message gives a number explicitly as "marks", "marks scored", or "score" (not "rank") for one of the RANK-only exams, do NOT put that number in "rank" — leave "rank" null and set "marks_confusion": true. Otherwise set "marks_confusion": false.
 
 Intent — classify what the LATEST message is asking for (always set it; null only if truly unclear):
 - "list_colleges" — wants the college/options list for their profile, or is giving/refining profile details to get that list (rank, category, branch, "show me", "any options?", "what can I get?").
@@ -645,6 +656,10 @@ export async function POST(req) {
   // header). Null when extraction was skipped (a plain follow-up → list intent).
   const intent = params && typeof params.intent === 'string' ? params.intent : null;
   if (params && 'intent' in params) delete params.intent;
+  // Signal from the extractor, not a persisted profile field — must not be
+  // merged into `resolved` (would leak into retrieval keys + the params header).
+  const marksConfusion = !!(params && params.marks_confusion === true);
+  if (params && 'marks_confusion' in params) delete params.marks_confusion;
   // EXAM SWITCH: if the new message names a different exam, the old exam's
   // rank/category/gender no longer apply (a KCET rank isn't a TGEAPCET rank, and
   // category codes differ per exam). Start fresh from the new params instead of
@@ -759,6 +774,20 @@ export async function POST(req) {
     if (remaining != null) h['X-RateLimit-Remaining'] = String(remaining);
     return h;
   };
+
+  // MARKS-FOR-RANK CONFUSION: the extractor flagged that the student gave marks/
+  // score for an exam we only have rank data for (e.g. "I got 95 marks in JEE
+  // Main"). Answer deterministically and immediately — never let a marks number
+  // slip into `rank` and drive a bogus college list.
+  if (marksConfusion && exam && !isScoreExam) {
+    const label = EXAM_LABEL[exam] || exam;
+    const finalText = `We only have rank-based data for ${label}, not marks — could you please share your ${label} rank instead of your marks?`;
+    const out = new TextEncoder().encode(finalText);
+    const stream = new ReadableStream({ start(c) { c.enqueue(out); c.close(); } });
+    return new Response(stream, {
+      headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
+    });
+  }
 
   // 4. (Response cache removed — every turn is generated fresh so answers always
   //    reflect the latest data + prompt/classification logic.)
