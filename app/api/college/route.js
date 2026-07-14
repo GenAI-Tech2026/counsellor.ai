@@ -2,8 +2,16 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { checkRateLimit, checkGlobalBudget, MAX_PER_HOUR, GUEST_MAX_PER_HOUR } from '@/lib/ratelimit';
 import { createClient } from '@/lib/supabase/server';
 import { clientIp } from '@/lib/client-ip';
+import { redisGet, redisSetEx } from '@/lib/redis';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-for-build');
+
+// The colleges below are a fixed allowlist whose official blurbs barely change,
+// so we cache each generated summary in Redis and serve repeat clicks for free
+// (no site fetch, no Gemini call). Bump SUMMARY_CACHE_VER to force a refresh if
+// the prompt or a college's facts change. Degrades gracefully when Redis is off.
+const SUMMARY_CACHE_VER = 'v1';
+const SUMMARY_TTL_SEC = 7 * 24 * 3600; // 7 days
 
 // Standardized error shape, mirroring /api/chat.
 function errorResponse(status, code, message, extra = {}) {
@@ -141,6 +149,14 @@ export async function POST(req) {
     return errorResponse(503, 'service_busy', 'We are experiencing high demand right now. Please try again shortly.');
   }
 
+  // Cache hit → return the stored summary without fetching the site or calling
+  // Gemini. Returns null when Redis is unavailable, so we fall through to generate.
+  const cacheKey = `college:summary:${SUMMARY_CACHE_VER}:${key}`;
+  const cachedSummary = await redisGet(cacheKey);
+  if (cachedSummary) {
+    return Response.json({ name: college.name, url: college.url, summary: cachedSummary });
+  }
+
   const siteText = await fetchSiteText(college.url);
 
   // Ground the summary in the scraped text; when the site is a thin JS shell we
@@ -180,6 +196,9 @@ Rules:
     if (!summary) {
       return errorResponse(502, 'empty_summary', 'Could not summarize this college right now. Please try again.');
     }
+    // Store for the next click. Fire-and-forget: never let a cache write failure
+    // break the response the user is waiting on.
+    redisSetEx(cacheKey, summary, SUMMARY_TTL_SEC).catch(() => {});
     return Response.json({ name: college.name, url: college.url, summary });
   } catch (error) {
     console.error('College summary error:', error);
