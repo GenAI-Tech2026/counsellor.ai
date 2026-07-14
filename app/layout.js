@@ -63,17 +63,7 @@ export const metadata = {
       "A chat-based AI counsellor that instantly finds eligible engineering colleges based on your rank, category, and gender.",
     images: ["/branding/android-chrome-512x512.png"],
   },
-  icons: {
-    icon: [
-      { url: '/branding/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
-      { url: '/branding/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
-      { url: '/branding/favicon-48x48.png', sizes: '48x48', type: 'image/png' },
-      { url: '/branding/favicon.ico' },
-    ],
-    apple: [
-      { url: '/branding/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
-    ],
-  },
+    // Next.js automatically handles icons and apple-icons placed in the app/ directory.
   manifest: '/branding/manifest.webmanifest',
 };
 
