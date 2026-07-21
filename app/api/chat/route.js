@@ -12,7 +12,7 @@ import {
   TNEA_CATEGORY_CODE, CUET_CATEGORY_CODE,
   tokenizeCollege,
 } from '@/lib/rag';
-import { SYSTEM_PROMPT } from '@/lib/system-prompt';
+import { getConversationalModel } from '@/lib/prompt-cache';
 import { checkRateLimit, checkGlobalBudget, MAX_PER_HOUR, GUEST_MAX_PER_HOUR } from '@/lib/ratelimit';
 import { createClient } from '@/lib/supabase/server';
 import {
@@ -21,6 +21,9 @@ import {
   cacheMetrics,
 } from '@/lib/answer-cache';
 import { detectNextgen, formatNextgenContext } from '@/lib/nextgen';
+import { emitChatSpan } from '@/lib/trace';
+import { clientIp } from '@/lib/client-ip';
+import { redisEnabled } from '@/lib/redis';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-for-build');
 
@@ -33,10 +36,15 @@ export const maxDuration = 60;
 /**
  * Call model.generateContent with retries on TRANSIENT errors (Gemini 503 "high
  * demand", 429, 500, network blips). These spikes are usually momentary, so a
- * couple of short backoffs turn a user-visible "extraction failed" into a normal
- * answer. Non-transient errors (bad request, auth) throw immediately.
+ * short backoff turns a user-visible "extraction failed" into a normal answer.
+ * Non-transient errors (bad request, auth, content policy) throw IMMEDIATELY — a
+ * 4xx never retries, so a bad request can't be billed multiple times.
+ *
+ * Cost guard: attempts is capped at 2 (one retry). A transient spike therefore
+ * costs at most 2× a single call, never 3×. Raise only if Gemini overload is
+ * causing real user-visible failures.
  */
-async function generateWithRetry(model, prompt, { attempts = 3, baseDelayMs = 400 } = {}) {
+async function generateWithRetry(model, prompt, { attempts = 2, baseDelayMs = 400 } = {}) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -99,6 +107,14 @@ const NO_CATEGORY_EXAMS = new Set(['BITSAT', 'NDA']);
 // grounded in the retrieved real cut-off context.
 const SCORE_EXAMS = new Set(['TNEA', 'CUET', 'BITSAT', 'NDA']);
 
+// User-facing names (no year/cycle, per the no-date-reveal rule) for the
+// rank-only exams, used to word the "please give your rank, not marks" reply.
+const EXAM_LABEL = {
+  TGEAPCET: 'TGEAPCET', APEAMCET: 'APEAMCET (AP EAPCET)', JEE: 'JEE Main',
+  'JEE Advanced': 'JEE Advanced', KCET: 'KCET', MHTCET: 'MHT-CET',
+  WBJEE: 'WBJEE', COMEDK: 'COMEDK', KEAM: 'KEAM', NDA: 'NDA',
+};
+
 // For the "recommend colleges for my rank" path we pull the FULL eligible set
 // (rank-mode) so the deterministic builder can pick the colleges whose closing
 // rank is genuinely CLOSEST to the student's — a cutoff-proximity task that a
@@ -107,6 +123,15 @@ const SCORE_EXAMS = new Set(['TNEA', 'CUET', 'BITSAT', 'NDA']);
 // above the largest corpus (JEE Advanced, ~18.7k rows) so every eligible row is
 // returned (paged in rag.js); the answer-builder then keeps only the nearest few.
 const RECOMMEND_FULL_TOPK = 20000;
+
+// An ADVICE turn ("CSE or ECE for my rank?") routes to the conversational model,
+// NOT the deterministic proximity builder — so it never consumes the full eligible
+// set. It only needs a small grounding sample, and rank-mode paging is
+// similarity-ordered (rag.js), so the top-K it returns are exactly the rows the
+// conversational context cap would keep anyway. Fetching this many instead of
+// RECOMMEND_FULL_TOPK avoids ~18 paged Supabase RPCs + formatting ~20k rows we'd
+// throw away — with an identical prompt to the model.
+const ADVICE_CONTEXT_TOPK = 40;
 
 // Build {college, branch, closing, phase} rows DIRECTLY from the retrieved DB
 // metadata — no LLM. The closing rank is read from the real field for the
@@ -157,11 +182,110 @@ function metaToRows(exam, sources, { category, gender }) {
   return out;
 }
 
+// Per-exam category-mapping blocks for the extraction prompt. When we already
+// know the student's exam, we send ONLY that exam's block instead of all 13 —
+// a ~60-75% cut in the prompt's input tokens with identical extraction output
+// (we only drop mappings for exams the message isn't about). JEE Main and JEE
+// Advanced share JoSAA seat types, so they point at the same block.
+const _JEE_CAT_BLOCK = `Category mapping when exam is JEE or JEE Advanced (JoSAA seat types):
+- "general / open / unreserved / OC" → "OPEN"
+- "OBC / OBC-NCL / backward" → "OBC-NCL"
+- "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"`;
+const CATEGORY_MAPPING_BLOCKS = {
+  TGEAPCET: `Category mapping when exam is TGEAPCET (Telangana categories):
+- "backward class A / BC-A / BCA" → "BC-A" (same for B C D E)
+- "scheduled caste / SC" → "SC-I" unless II or III specified
+- "scheduled tribe / ST / tribal" → "ST"
+- "general / open / unreserved" → "OC"
+- "EWS / economically weaker" → "EWS"`,
+  APEAMCET: `Category mapping when exam is APEAMCET (Andhra Pradesh categories):
+- "backward class A / BC-A / BCA" → "BC-A" (same for B C D E)
+- "scheduled caste / SC" → "SC"; "scheduled tribe / ST" → "ST"
+- "general / open / unreserved" → "OC"; "EWS" → "EWS"`,
+  JEE: _JEE_CAT_BLOCK,
+  'JEE Advanced': _JEE_CAT_BLOCK,
+  KCET: `Category mapping when exam is KCET (Karnataka categories):
+- "general / GM / open" → "GENERAL"
+- "category 1 / cat-1 / 1" → "1"
+- "2A / 2B / 3A / 3B" → that exact code
+- "SC" → "SC"; "ST" → "ST"`,
+  MHTCET: `Category mapping when exam is MHTCET (Maharashtra categories):
+- "general / open" → "GENERAL"
+- "OBC" → "OBC"; "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"
+- "VJ / VJNT" → "VJ"; "NT1 / NT-B" → "NT1"; "NT2 / NT-C" → "NT2"; "NT3 / NT-D" → "NT3"; "SEBC" → "SEBC"`,
+  WBJEE: `Category mapping when exam is WBJEE (West Bengal categories):
+- "general / open" → "OPEN"; "OBC-A / OBC A" → "OBC-A"; "OBC-B / OBC B" → "OBC-B"; "OBC" → "OBC"
+- "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"; "TFW" → "TFW"`,
+  COMEDK: `Category mapping when exam is COMEDK (Karnataka): "general / GM / open" → "GENERAL" (this dataset is General Merit).`,
+  KEAM: `Category mapping when exam is KEAM (Kerala categories):
+- "general / state merit / SM / open" → "GENERAL"; "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"
+- "ezhava / OBC / EZ" → "EZ"; "muslim / MU" → "MU"; other Kerala communal codes → that exact 2-letter code`,
+  TNEA: `Category mapping when exam is TNEA (Tamil Nadu categories; NOTE this is a MARK out of 200, not a rank):
+- "general / OC / open" → "OC"; "BC" → "BC"; "BCM" → "BCM"; "MBC" → "MBC"; "SC" → "SC"; "SCA" → "SCA"; "ST" → "ST"`,
+  CUET: `Category mapping when exam is CUET (DU CSAS; NOTE this is a CUET SCORE, not a rank):
+- "general / UR / unreserved / open" → "UR"; "OBC" → "OBC"; "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"; "PwBD / PwD" → "PWBD"`,
+  BITSAT: `BITSAT has NO reservation categories (NOTE it is a BITSAT SCORE, not a rank) — leave category null.`,
+  NDA: `NDA & NA is an aggregate national exam (no colleges, no reservation category) — leave category null; questions are factual ("what was the NDA 2024 cut-off?").`,
+};
+// The full set (unique blocks, JEE once) for when the exam is unknown or the
+// message may be switching exams.
+const ALL_CATEGORY_BLOCKS = [
+  CATEGORY_MAPPING_BLOCKS.TGEAPCET,
+  CATEGORY_MAPPING_BLOCKS.APEAMCET,
+  _JEE_CAT_BLOCK,
+  CATEGORY_MAPPING_BLOCKS.KCET,
+  CATEGORY_MAPPING_BLOCKS.MHTCET,
+  CATEGORY_MAPPING_BLOCKS.WBJEE,
+  CATEGORY_MAPPING_BLOCKS.COMEDK,
+  CATEGORY_MAPPING_BLOCKS.KEAM,
+  CATEGORY_MAPPING_BLOCKS.TNEA,
+  CATEGORY_MAPPING_BLOCKS.CUET,
+  CATEGORY_MAPPING_BLOCKS.BITSAT,
+  CATEGORY_MAPPING_BLOCKS.NDA,
+].join('\n\n');
+
+// Distinctive keyword per exam, used only to decide whether a free-text message
+// might be SWITCHING to a different exam than the one already in the profile. If
+// so we keep the full category prompt (safe); otherwise we scope to the known
+// exam (cheap). A miss only forgoes the optimization or, at worst, mis-maps a
+// category on a same-message exam switch (rare; self-corrects next turn) — never
+// a correctness risk for the common single-exam conversation.
+const EXAM_KEYWORDS = {
+  TGEAPCET: /\b(?:tgeapcet|eapcet|eamcet|telangana)\b/i,
+  APEAMCET: /\b(?:apeamcet|ap eapcet|ap eamcet|andhra)\b/i,
+  JEE: /\b(?:jee|josaa|mains?|nit|iiit|gfti)\b/i,
+  'JEE Advanced': /\b(?:advanced|iit)\b/i,
+  KCET: /\b(?:kcet|karnataka cet)\b/i,
+  MHTCET: /\b(?:mht|mhtcet|maharashtra cet|cap round)\b/i,
+  WBJEE: /\b(?:wbjee|west bengal)\b/i,
+  COMEDK: /\b(?:comedk|comed-?k)\b/i,
+  KEAM: /\b(?:keam|kerala)\b/i,
+  TNEA: /\b(?:tnea|tamil nadu|anna university)\b/i,
+  CUET: /\b(?:cuet|csas|delhi university)\b/i,
+  BITSAT: /\b(?:bitsat|bits|pilani)\b/i,
+  NDA: /\b(?:nda|naval academy|national defence)\b/i,
+};
+function mentionsDifferentExam(message, currentExam) {
+  const m = String(message || '');
+  for (const [ex, re] of Object.entries(EXAM_KEYWORDS)) {
+    if (ex === currentExam) continue;
+    // JEE Main ↔ JEE Advanced share seat types and overlapping wording; a switch
+    // between them keeps the same (shared) block, so don't treat it as different.
+    if ((currentExam === 'JEE' && ex === 'JEE Advanced') || (currentExam === 'JEE Advanced' && ex === 'JEE')) continue;
+    if (re.test(m)) return true;
+  }
+  return false;
+}
+
 /**
  * Semantically extract structured admission params from the full conversation.
  * Uses Gemini so it understands "backward class A", "five hundred", "she", etc.
+ *
+ * @param {string|null} focusExam - when the student's exam is already known and
+ *   the message isn't switching exams, pass it to send ONLY that exam's category
+ *   mapping (smaller prompt, same output). Null → send all exams' mappings.
  */
-async function extractParams(history, currentMessage) {
+async function extractParams(history, currentMessage, focusExam = null) {
   const historyMessages = history.filter(h => h.role === 'user').map(h =>
     h.parts.map(p => p.text || '').join(' ')
   ).join('\n');
@@ -176,6 +300,12 @@ async function extractParams(history, currentMessage) {
       maxOutputTokens: 256,
     },
   });
+
+  // #2 cost lever: when the exam is known (and not being switched), include only
+  // that exam's category mapping — the biggest chunk of this prompt's static text.
+  const categoryBlock = (focusExam && CATEGORY_MAPPING_BLOCKS[focusExam])
+    ? CATEGORY_MAPPING_BLOCKS[focusExam]
+    : ALL_CATEGORY_BLOCKS;
 
   const prompt = `Extract admission counselling parameters from this student conversation.
 Return ONLY valid JSON — no markdown, no explanation.
@@ -201,8 +331,11 @@ JSON schema (null for anything not mentioned):
   "branch_preference": <plain English or null>,
   "location_preference": <city/district/institute name or null>,
   "target_college": <specific named college/university the student is asking the cutoff FOR, or null>,
-  "intent": <"list_colleges" | "advice" | "college_lookup" | "general_info" | "off_topic" | "smalltalk" | null>
+  "intent": <"list_colleges" | "advice" | "college_lookup" | "general_info" | "off_topic" | "smalltalk" | null>,
+  "marks_confusion": <true if the RANK-vs-MARKS rule below applies to the LATEST message, else false>
 }
+
+RANK vs MARKS: TGEAPCET, APEAMCET, JEE, JEE Advanced, KCET, MHTCET, WBJEE, COMEDK, KEAM and NDA are RANK-only exams — we have no marks/score data for them (TNEA, CUET and BITSAT are the exception — those genuinely ARE marks/score exams, so ignore this rule for them). If the LATEST message gives a number explicitly as "marks", "marks scored", or "score" (not "rank") for one of the RANK-only exams, do NOT put that number in "rank" — leave "rank" null and set "marks_confusion": true. Otherwise set "marks_confusion": false.
 
 Intent — classify what the LATEST message is asking for (always set it; null only if truly unclear):
 - "list_colleges" — wants the college/options list for their profile, or is giving/refining profile details to get that list (rank, category, branch, "show me", "any options?", "what can I get?").
@@ -227,53 +360,7 @@ Exam mapping:
 - "bitsat / bits / bits pilani" → "BITSAT"
 - "nda / na / national defence academy / naval academy" → "NDA"
 
-Category mapping when exam is TGEAPCET (Telangana categories):
-- "backward class A / BC-A / BCA" → "BC-A" (same for B C D E)
-- "scheduled caste / SC" → "SC-I" unless II or III specified
-- "scheduled tribe / ST / tribal" → "ST"
-- "general / open / unreserved" → "OC"
-- "EWS / economically weaker" → "EWS"
-
-Category mapping when exam is APEAMCET (Andhra Pradesh categories):
-- "backward class A / BC-A / BCA" → "BC-A" (same for B C D E)
-- "scheduled caste / SC" → "SC"; "scheduled tribe / ST" → "ST"
-- "general / open / unreserved" → "OC"; "EWS" → "EWS"
-
-Category mapping when exam is JEE or JEE Advanced (JoSAA seat types):
-- "general / open / unreserved / OC" → "OPEN"
-- "OBC / OBC-NCL / backward" → "OBC-NCL"
-- "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"
-
-Category mapping when exam is KCET (Karnataka categories):
-- "general / GM / open" → "GENERAL"
-- "category 1 / cat-1 / 1" → "1"
-- "2A / 2B / 3A / 3B" → that exact code
-- "SC" → "SC"; "ST" → "ST"
-
-Category mapping when exam is MHTCET (Maharashtra categories):
-- "general / open" → "GENERAL"
-- "OBC" → "OBC"; "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"
-- "VJ / VJNT" → "VJ"; "NT1 / NT-B" → "NT1"; "NT2 / NT-C" → "NT2"; "NT3 / NT-D" → "NT3"; "SEBC" → "SEBC"
-
-Category mapping when exam is WBJEE (West Bengal categories):
-- "general / open" → "OPEN"; "OBC-A / OBC A" → "OBC-A"; "OBC-B / OBC B" → "OBC-B"; "OBC" → "OBC"
-- "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"; "TFW" → "TFW"
-
-Category mapping when exam is COMEDK (Karnataka): "general / GM / open" → "GENERAL" (this dataset is General Merit).
-
-Category mapping when exam is KEAM (Kerala categories):
-- "general / state merit / SM / open" → "GENERAL"; "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"
-- "ezhava / OBC / EZ" → "EZ"; "muslim / MU" → "MU"; other Kerala communal codes → that exact 2-letter code
-
-Category mapping when exam is TNEA (Tamil Nadu categories; NOTE this is a MARK out of 200, not a rank):
-- "general / OC / open" → "OC"; "BC" → "BC"; "BCM" → "BCM"; "MBC" → "MBC"; "SC" → "SC"; "SCA" → "SCA"; "ST" → "ST"
-
-Category mapping when exam is CUET (DU CSAS; NOTE this is a CUET SCORE, not a rank):
-- "general / UR / unreserved / open" → "UR"; "OBC" → "OBC"; "SC" → "SC"; "ST" → "ST"; "EWS" → "EWS"; "PwBD / PwD" → "PWBD"
-
-BITSAT has NO reservation categories (NOTE it is a BITSAT SCORE, not a rank) — leave category null.
-
-NDA & NA is an aggregate national exam (no colleges, no reservation category) — leave category null; questions are factual ("what was the NDA 2024 cut-off?").
+${categoryBlock}
 
 For TNEA / CUET / BITSAT the number the student gives is their MARK/SCORE (higher is better), not a rank — still put it in the "rank" field.
 
@@ -341,21 +428,7 @@ function looksLikeFollowUp(msg) {
 const MAX_MESSAGE_CHARS = 8000;
 const MAX_HISTORY_ITEMS = 100;
 
-/**
- * Trusted client IP. The leftmost x-forwarded-for entry is client-CLAIMED and
- * spoofable; rate-limiting on it lets a caller mint unlimited guest buckets.
- * Prefer the platform-set `x-real-ip`, else the LAST (closest-proxy) hop.
- */
-function clientIp(req) {
-  const real = req.headers.get('x-real-ip');
-  if (real) return real.trim();
-  const xff = req.headers.get('x-forwarded-for');
-  if (xff) {
-    const hops = xff.split(',').map(s => s.trim()).filter(Boolean);
-    if (hops.length) return hops[hops.length - 1];
-  }
-  return 'unknown';
-}
+// Trusted client IP for guest rate-limit keying — see lib/client-ip.js.
 
 // `priorParams` comes from the client, so never trust its shape: whitelist the
 // fields and bound the values before they reach retrieval / the cache key.
@@ -565,9 +638,9 @@ export async function POST(req) {
 
     // 1. Parse the body FIRST so we can start the (slow) Gemini param extraction
     //    in parallel with the auth + rate-limit round-trips.
-    let message, history, priorParams;
+    let message, history, priorParams, structured;
     try {
-      ({ message, history, priorParams } = await req.json());
+      ({ message, history, priorParams, structured } = await req.json());
     } catch {
       return errorResponse(400, 'invalid_request', 'Invalid request body.');
     }
@@ -584,20 +657,34 @@ export async function POST(req) {
   // Validate + whitelist client-supplied params before they touch retrieval/cache.
   const prior = sanitizeParams(priorParams);
 
+  // #1 cost lever: a GUIDED chip turn carries the exact field the student picked
+  // (`structured`), so the LLM extractor has nothing to infer — the client already
+  // knows the delta. (priorParams lags a turn behind the UI because React state is
+  // async, which is the only reason the extractor was ever needed on these turns.)
+  // We sanitize the delta with the same whitelist as priorParams and use it as the
+  // params. A profile-building turn's intent is "list the colleges", so we leave
+  // intent null → the default list/deterministic routing, exactly as before.
+  const structuredDelta = (structured && typeof structured === 'object' && !Array.isArray(structured))
+    ? sanitizeParams(structured)
+    : null;
+  const isStructured = structuredDelta !== null;
+
   // Re-run the LLM extractor when it can change something OR when we need it to
-  // judge intent. We skip it (reuse the known profile, save a Gemini call) ONLY
-  // for a clear in-domain follow-up on an already-complete profile ("show the
-  // list", "yes", "any options?") — those always mean "give the colleges". Any
-  // other message on a complete profile (a profile change, an advice question, or
-  // something off-topic) goes through the extractor so `intent` is classified.
+  // judge intent. We skip it (reuse the known profile, save a Gemini call) for a
+  // clear in-domain follow-up on an already-complete profile ("show the list",
+  // "yes", "any options?") — those always mean "give the colleges" — AND for a
+  // guided chip turn (structured delta present). Any free-text message otherwise
+  // goes through the extractor so `intent` is classified.
   // Cap the history we feed the models to the last few turns (cost + latency).
   const HISTORY_WINDOW = 10;
   const recentHistory = Array.isArray(history) ? history.slice(-HISTORY_WINDOW) : [];
   const isPlainFollowUp = isProfileComplete(prior) && !looksLikeChange(message) && looksLikeFollowUp(message);
-  const shouldExtract = !isPlainFollowUp;
+  const shouldExtract = !isPlainFollowUp && !isStructured;
+  // Scope the extraction prompt to the known exam when we're not switching exams.
+  const focusExam = (prior.exam && !mentionsDifferentExam(message, prior.exam)) ? prior.exam : null;
   const extractPromise = shouldExtract
-    ? extractParams(recentHistory, message)
-    : Promise.resolve({});
+    ? extractParams(recentHistory, message, focusExam)
+    : Promise.resolve(structuredDelta || {});
 
   // 2. Auth + rate-limit — run WHILE extraction is in flight.
   let userId = null;
@@ -645,6 +732,10 @@ export async function POST(req) {
   // header). Null when extraction was skipped (a plain follow-up → list intent).
   const intent = params && typeof params.intent === 'string' ? params.intent : null;
   if (params && 'intent' in params) delete params.intent;
+  // Signal from the extractor, not a persisted profile field — must not be
+  // merged into `resolved` (would leak into retrieval keys + the params header).
+  const marksConfusion = !!(params && params.marks_confusion === true);
+  if (params && 'marks_confusion' in params) delete params.marks_confusion;
   // EXAM SWITCH: if the new message names a different exam, the old exam's
   // rank/category/gender no longer apply (a KCET rank isn't a TGEAPCET rank, and
   // category codes differ per exam). Start fresh from the new params instead of
@@ -760,6 +851,20 @@ export async function POST(req) {
     return h;
   };
 
+  // MARKS-FOR-RANK CONFUSION: the extractor flagged that the student gave marks/
+  // score for an exam we only have rank data for (e.g. "I got 95 marks in JEE
+  // Main"). Answer deterministically and immediately — never let a marks number
+  // slip into `rank` and drive a bogus college list.
+  if (marksConfusion && exam && !isScoreExam) {
+    const label = EXAM_LABEL[exam] || exam;
+    const finalText = `We only have rank-based data for ${label}, not marks — could you please share your ${label} rank instead of your marks?`;
+    const out = new TextEncoder().encode(finalText);
+    const stream = new ReadableStream({ start(c) { c.enqueue(out); c.close(); } });
+    return new Response(stream, {
+      headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
+    });
+  }
+
   // 4. (Response cache removed — every turn is generated fresh so answers always
   //    reflect the latest data + prompt/classification logic.)
 
@@ -832,6 +937,12 @@ export async function POST(req) {
     retrievalMinRank = Math.max(1, Math.floor(rankBucket(rank).low * 0.85));
   }
 
+  // Rank-mode fetch size for the "recommend" branches: the deterministic builder
+  // needs the FULL eligible set to sort by cutoff proximity, but an advice turn
+  // only needs a small grounding sample (see ADVICE_CONTEXT_TOPK). Same rows to
+  // the model either way; just far fewer rows fetched + formatted on advice turns.
+  const recommendTopK = wantsAdvice ? ADVICE_CONTEXT_TOPK : RECOMMEND_FULL_TOPK;
+
   try {
     if (offTopic || generalInfo || nextgenContext || cachedRows) {
       // Skip cutoff retrieval: off-topic → deflection; general_info → rank-
@@ -854,9 +965,9 @@ export async function POST(req) {
         const genderVal = JEE_GENDER[gender] ?? null;
         const parts = [label, category, gender, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieve(queryStr, RECOMMEND_FULL_TOPK, { rank: retrievalMinRank, seatType, gender: genderVal, rankMode: true }));
+        ({ contextBlock, sources: retrievedSources } = await retrieve(queryStr, recommendTopK, { rank: retrievalMinRank, seatType, gender: genderVal, rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieve(queryStr, RECOMMEND_FULL_TOPK, { rank: null, seatType, gender: genderVal, rankMode: true }));
+          ({ contextBlock, sources: retrievedSources } = await retrieve(queryStr, recommendTopK, { rank: null, seatType, gender: genderVal, rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = [label, category, gender, ...prefParts];
@@ -874,9 +985,9 @@ export async function POST(req) {
         const fallbackFilter = fieldName ? { [fieldName]: { '$gte': 1 } } : null;
         const parts = ['APEAMCET 2022', category, gender, `rank ${rank}`, 'eligible colleges last rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(queryStr, RECOMMEND_FULL_TOPK, whereFilter, { rankMode: true }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(queryStr, recommendTopK, whereFilter, { rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(queryStr, RECOMMEND_FULL_TOPK, fallbackFilter, { rankMode: true }));
+          ({ contextBlock, sources: retrievedSources } = await retrieveApeamcetContext(queryStr, recommendTopK, fallbackFilter, { rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = ['APEAMCET 2022', category, gender, ...prefParts];
@@ -892,9 +1003,9 @@ export async function POST(req) {
         const code = KCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['KCET 2024 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(queryStr, recommendTopK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: null, rankMode: true }));
+          ({ contextBlock, sources: retrievedSources } = await retrieveKcetContext(queryStr, recommendTopK, { rankField: code, rank: null, rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = ['KCET 2024 Engineering', category, ...prefParts];
@@ -910,9 +1021,9 @@ export async function POST(req) {
         const code = MHTCET_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['MHT-CET 2024 Engineering', category, `CET merit number ${rank}`, 'eligible colleges closing rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(queryStr, recommendTopK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: null, rankMode: true }));
+          ({ contextBlock, sources: retrievedSources } = await retrieveMhtcetContext(queryStr, recommendTopK, { rankField: code, rank: null, rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = ['MHT-CET 2024 Engineering', category, ...prefParts];
@@ -928,9 +1039,9 @@ export async function POST(req) {
         const catLabel = WBJEE_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['WBJEE 2025 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieveWbjeeContext(queryStr, RECOMMEND_FULL_TOPK, { rank: retrievalMinRank, category: catLabel, rankMode: true }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveWbjeeContext(queryStr, recommendTopK, { rank: retrievalMinRank, category: catLabel, rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieveWbjeeContext(queryStr, RECOMMEND_FULL_TOPK, { rank: null, category: catLabel, rankMode: true }));
+          ({ contextBlock, sources: retrievedSources } = await retrieveWbjeeContext(queryStr, recommendTopK, { rank: null, category: catLabel, rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = ['WBJEE 2025 Engineering', category, ...prefParts];
@@ -946,9 +1057,9 @@ export async function POST(req) {
         const code = COMEDK_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['COMEDK 2024 Engineering', category, `rank ${rank}`, 'eligible colleges closing rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieveComedkContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveComedkContext(queryStr, recommendTopK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieveComedkContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: null, rankMode: true }));
+          ({ contextBlock, sources: retrievedSources } = await retrieveComedkContext(queryStr, recommendTopK, { rankField: code, rank: null, rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = ['COMEDK 2024 Engineering', category, ...prefParts];
@@ -964,9 +1075,9 @@ export async function POST(req) {
         const code = KEAM_CATEGORY_CODE[String(category).toUpperCase()] || null;
         const parts = ['KEAM 2025 Engineering', category, `rank ${rank}`, 'eligible colleges last rank', ...prefParts];
         const queryStr = parts.filter(Boolean).length > 1 ? parts.filter(Boolean).join(' ') + ' ' + message : message;
-        ({ contextBlock, sources: retrievedSources } = await retrieveKeamContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveKeamContext(queryStr, recommendTopK, { rankField: code, rank: retrievalMinRank, rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieveKeamContext(queryStr, RECOMMEND_FULL_TOPK, { rankField: code, rank: null, rankMode: true }));
+          ({ contextBlock, sources: retrievedSources } = await retrieveKeamContext(queryStr, recommendTopK, { rankField: code, rank: null, rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = ['KEAM 2025 Engineering', category, ...prefParts];
@@ -1049,9 +1160,9 @@ export async function POST(req) {
         // Rank-mode: pull ALL eligible colleges (closing >= retrievalMinRank) so the
         // deterministic builder can rank them by cutoff proximity, not embedding
         // similarity — otherwise the colleges nearest the student's rank get dropped.
-        ({ contextBlock, sources: retrievedSources } = await retrieveContext(queryStr, RECOMMEND_FULL_TOPK, whereFilter, { rankMode: true }));
+        ({ contextBlock, sources: retrievedSources } = await retrieveContext(queryStr, recommendTopK, whereFilter, { rankMode: true }));
         if (!contextBlock) {
-          ({ contextBlock, sources: retrievedSources } = await retrieveContext(queryStr, RECOMMEND_FULL_TOPK, fallbackFilter, { rankMode: true }));
+          ({ contextBlock, sources: retrievedSources } = await retrieveContext(queryStr, recommendTopK, fallbackFilter, { rankMode: true }));
         }
       } else if (!hasRank) {
         const parts = ['TGEAPCET 2025', category, gender, ...prefParts];
@@ -1080,8 +1191,24 @@ export async function POST(req) {
   if (target_college) profileBits.push(`asking specifically about ${target_college}`);
   const profileLine = profileBits.length ? `STUDENT PROFILE (already provided — do not re-ask): ${profileBits.join(', ')}.` : '';
 
+  // The conversational path only needs a REPRESENTATIVE sample of cutoffs to
+  // ground its prose (advice / named-college / general answers). But an advice
+  // turn with a full profile still runs the rank-mode retrieval, which returns up
+  // to RECOMMEND_FULL_TOPK rows meant for the deterministic builder — shipping all
+  // of them to the LLM is pure wasted input tokens. Cap the rows we actually feed
+  // the model. (Rows are '\n\n'-joined; the deterministic path is unaffected — it
+  // uses `contextBlock`/`retrievedSources` directly and returns before here.)
+  const MAX_CONV_CONTEXT_ROWS = 25;
+  let convContextBlock = contextBlock;
+  if (convContextBlock) {
+    const rows = convContextBlock.split('\n\n');
+    if (rows.length > MAX_CONV_CONTEXT_ROWS) {
+      convContextBlock = rows.slice(0, MAX_CONV_CONTEXT_ROWS).join('\n\n');
+    }
+  }
+
   const augmentedMessage = [
-    contextBlock ? `RETRIEVED CONTEXT (${contextLabel}):\n${contextBlock}` : '',
+    convContextBlock ? `RETRIEVED CONTEXT (${contextLabel}):\n${convContextBlock}` : '',
     // Authoritative, verified info for new-age colleges — answer ONLY from this;
     // present fees as approximate and point to the official site for exact figures.
     nextgenContext ? `NEXT-GEN COLLEGE INFO (authoritative — answer using ONLY this; do not invent numbers; fees are approximate):\n${nextgenContext}` : '',
@@ -1173,6 +1300,7 @@ ${closingRule}
       }
       mark('extract');
       if (timing) console.log('[chat] deterministic', JSON.stringify(marks));
+      emitChatSpan({ outcome: 'deterministic', exam, intent, total: Date.now() - t0, marks });
 
       const finalText = lookupReady
         ? buildLookupAnswer(rows, { catLabel, collegeName: target_college, branchPref: branch_preference, rank })
@@ -1245,6 +1373,7 @@ ${closingRule}
         }
         if (serve) {
           if (timing) console.log('[cache] tier2 hit', { exam, score: hit.score });
+          emitChatSpan({ outcome: 'tier2_hit', exam, intent, cache: 'tier2', total: Date.now() - t0, marks });
           const out = new TextEncoder().encode(answer);
           const stream = new ReadableStream({ start(c) { c.enqueue(out); c.close(); } });
           return new Response(stream, {
@@ -1254,14 +1383,36 @@ ${closingRule}
       }
     }
 
+    // OFF-TOPIC → canned decline, NO LLM call. Off-topic replies are formulaic
+    // (the system prompt itself prescribes a one-line decline + redirect), so a
+    // deterministic answer saves a whole Gemini call on every off-topic turn with
+    // no quality loss. Smalltalk still goes through the model (+ Tier-2 cache),
+    // since greetings read better when contextual. Skipped when a named-college
+    // lookup is active (that's on-topic and needs a real, grounded answer).
+    if (intent === 'off_topic' && !lookupActive) {
+      const redirect = exam
+        ? `Want to see colleges for your rank, or check a specific one?`
+        : `Which entrance exam is your rank from?`;
+      const finalText = `That's a little outside my lane — I'm here to help with engineering college admissions. ${redirect}`;
+      emitChatSpan({ outcome: 'offtopic_canned', exam, intent, total: Date.now() - t0, marks });
+      const out = new TextEncoder().encode(finalText);
+      const stream = new ReadableStream({ start(c) { c.enqueue(out); c.close(); } });
+      return new Response(stream, {
+        headers: successHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }),
+      });
+    }
+
     // Conversational path (asking for a missing detail, off-topic, etc.) — stream.
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-3.1-flash-lite',
-      systemInstruction: SYSTEM_PROMPT,
-    });
+    // The system prompt (~2.5k identical input tokens every turn) is served from
+    // an explicit context cache when available, billed at the cached-token
+    // discount; falls back to the inline system prompt if caching is unavailable.
+    const model = await getConversationalModel(genAI);
     const chat = model.startChat({
       history: chatHistory,
-      generationConfig: { maxOutputTokens: 2048 },
+      // Conversational answers are prose (advice / general info / asking for a
+      // missing detail) — never the big Safe/Borderline tables, which are built
+      // deterministically. 1536 is ample and caps worst-case output cost.
+      generationConfig: { maxOutputTokens: 1536 },
     });
     const geminiStream = await chat.sendMessageStream(augmentedMessage);
     if (timing) console.log('[chat] miss', JSON.stringify(marks));
@@ -1275,7 +1426,7 @@ ${closingRule}
           for await (const chunk of geminiStream.stream) {
             const text = chunk.text();
             if (text) {
-              if (first) { first = false; mark('first_token'); if (timing) console.log('[chat] first_token', marks.first_token + 'ms'); }
+              if (first) { first = false; mark('first_token'); if (timing) console.log('[chat] first_token', marks.first_token + 'ms'); emitChatSpan({ outcome: 'stream_first_token', exam, intent, total: Date.now() - t0, marks }); }
               full += text;
               controller.enqueue(encoder.encode(text));
             }
@@ -1287,6 +1438,22 @@ ${closingRule}
           controller.close();
           // TIER-2 POPULATE: cache the freshly-generated rank-independent answer.
           if (cacheableQA && full.trim().length > 40) semanticStore(exam, message, full).catch(() => {});
+          // Token accounting (opt-in): confirms the system-prompt context cache is
+          // actually discounting input tokens. `cachedContentTokenCount` > 0 means
+          // the cache hit; 0 (with a `[prompt-cache] disabled` log) means the prompt
+          // was below the model's minimum cacheable size and the fallback is in use.
+          if (timing) {
+            geminiStream.response
+              .then((r) => {
+                const u = r?.usageMetadata;
+                if (u) console.log('[chat] usage', JSON.stringify({
+                  prompt: u.promptTokenCount,
+                  cached: u.cachedContentTokenCount ?? 0,
+                  output: u.candidatesTokenCount,
+                }));
+              })
+              .catch(() => {});
+          }
         }
       },
     });
@@ -1303,6 +1470,11 @@ ${closingRule}
 // Observability (Phase 3): GET /api/chat returns answer-cache hit rates so the
 // cache can be monitored. Watch tier2.rejectRate — a rising value means reshape
 // is inventing facts (the BS canary) and should be tightened or disabled.
+//
+// `redisActive` reports whether Upstash Redis is configured. When FALSE, the
+// Tier-1 / Tier-2 / embedding / rate-limit caches all fall back to per-instance
+// memory and go cold on every serverless spin-up — so enabling Redis is the
+// single biggest cost/latency win, independent of any code change.
 export async function GET() {
-  return Response.json({ cache: cacheMetrics() });
+  return Response.json({ cache: cacheMetrics(), redisActive: redisEnabled() });
 }

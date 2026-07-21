@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { motion, useScroll, useTransform, useMotionValueEvent, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
-import { ArrowRight, GraduationCap, Sparkles, MessageSquare, Database, Search, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, GraduationCap, Sparkles, MessageSquare, Database, Search, CheckCircle2, Menu as MenuIcon, X } from 'lucide-react';
 
 function Typewriter({ text, delay = 0, speed = 30 }) {
   const [displayedText, setDisplayedText] = useState('');
@@ -44,7 +44,7 @@ function ScrollStatement() {
   const words = text.split(" ");
 
   return (
-    <section ref={containerRef} className={styles.asymmetricSection}>
+    <section id="cutoffs" ref={containerRef} className={styles.asymmetricSection}>
       <div className={styles.asymmetricContainer}>
         <h2 className={styles.asymmetricLargeText}>
           {words.map((word, i) => {
@@ -93,10 +93,12 @@ const staggerContainer = {
 };
 
 export default function Home() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = () => setMenuOpen(false);
   return (
     <div className={styles.landingContainer}>
       {/* Header */}
-      <motion.header 
+      <motion.header
         className={styles.header}
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -106,15 +108,23 @@ export default function Home() {
           <Image src="/branding/counsa_logo_mini.png" alt="Counsa.ai Logo" width={28} height={28} style={{height: '28px', width: 'auto', borderRadius: '4px'}} />
           Counsa.ai
         </div>
-        <nav className={styles.nav}>
-          <Link href="#">Exams</Link>
-          <Link href="#">Colleges</Link>
-          <Link href="#">Cutoffs</Link>
+        <nav className={`${styles.nav} ${menuOpen ? styles.navOpen : ''}`}>
+          <Link href="#exams" onClick={closeMenu}>Exams</Link>
+          <Link href="#colleges" onClick={closeMenu}>Colleges</Link>
+          <Link href="#cutoffs" onClick={closeMenu}>Cutoffs</Link>
         </nav>
-        <div>
+        <div className={styles.headerActions}>
           <Link href="/chat">
             <button className={styles.headerBtn}>Start Chatting</button>
           </Link>
+          <button
+            className={styles.menuToggle}
+            aria-label="Toggle navigation menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? <X size={24} /> : <MenuIcon size={24} />}
+          </button>
         </div>
       </motion.header>
 
@@ -191,7 +201,7 @@ export default function Home() {
       </section>
 
       {/* Logos */}
-      <section className={styles.logos}>
+      <section id="exams" className={styles.logos}>
         <div className={styles.logosTitle}>Supported Examinations</div>
         <div className={styles.marqueeContainer}>
           <div className={styles.marqueeTrack}>
@@ -220,7 +230,7 @@ export default function Home() {
       <ScrollStatement />
 
       {/* Features */}
-      <section className={styles.section}>
+      <section id="colleges" className={styles.section}>
         <div className={styles.featureSplit}>
           <motion.div 
             className={styles.featureText}

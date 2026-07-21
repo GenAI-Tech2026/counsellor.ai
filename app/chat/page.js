@@ -270,7 +270,7 @@ const TOPPER_COLLEGES = [
   {
     key: 'niat',
     name: 'NIAT',
-    full: 'NIAT (NxtWave Institute of Advanced Technologies)',
+    full: 'NIAT (NxtWave of Innovation in Advanced Technologies)',
     location: 'Hyderabad',
     tag: 'Industry-built CS',
     desc: 'Outcome-driven 4-year CS program with a hands-on, job-ready curriculum.',
@@ -807,7 +807,13 @@ export default function ChatPage() {
     toastTimer.current = setTimeout(() => setToast(null), 4000);
   }, []);
 
-  const sendMessage = async (text) => {
+  // `structured` (optional): the exact profile delta the student picked from a
+  // guided chip — e.g. { category: 'OBC' } or { rank: 12000 }. When present the
+  // server skips its Gemini param-extraction call entirely and uses this delta
+  // directly (see /api/chat). Free-text composer messages pass null → the server
+  // still extracts. Values MUST match the server enums (they come from the same
+  // choice constants), and rank MUST be a number.
+  const sendMessage = async (text, structured = null) => {
     if (!user) {
       const userMessageCount = messages.filter(m => m.role === 'user' && m.text).length;
       if (userMessageCount >= 3) {
@@ -858,7 +864,7 @@ export default function ChatPage() {
       res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history, priorParams }),
+        body: JSON.stringify({ message: text, history, priorParams, structured }),
         signal: controller.signal,
       });
     } catch (err) {
@@ -996,7 +1002,9 @@ export default function ChatPage() {
       setSkipped((s) => ({ ...s, branch_preference: true }));
       if (value === 'any') {
         updateProfileField('branch_preference', null);
-        sendMessage('Any branch is fine — show all branches.');
+        // Empty (but present) delta → server skips extraction and lists for the
+        // already-complete profile; no branch field to set.
+        sendMessage('Any branch is fine — show all branches.', {});
         return;
       }
     }
@@ -1018,7 +1026,10 @@ export default function ChatPage() {
     } else {
       text = String(value);
     }
-    sendMessage(text);
+    // The picked field IS the delta — pass it so the server skips extraction.
+    // (React state is async, so `profile`/priorParams won't include this pick
+    // until the next render; the delta closes that one-turn gap deterministically.)
+    sendMessage(text, { [question.key]: value });
   };
 
   // Clicking a top-ranker pick fetches that college's official site server-side

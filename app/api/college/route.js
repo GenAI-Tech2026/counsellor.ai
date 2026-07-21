@@ -1,8 +1,17 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { checkRateLimit, checkGlobalBudget, MAX_PER_HOUR, GUEST_MAX_PER_HOUR } from '@/lib/ratelimit';
 import { createClient } from '@/lib/supabase/server';
+import { clientIp } from '@/lib/client-ip';
+import { redisGet, redisSetEx } from '@/lib/redis';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-for-build');
+
+// The colleges below are a fixed allowlist whose official blurbs barely change,
+// so we cache each generated summary in Redis and serve repeat clicks for free
+// (no site fetch, no Gemini call). Bump SUMMARY_CACHE_VER to force a refresh if
+// the prompt or a college's facts change. Degrades gracefully when Redis is off.
+const SUMMARY_CACHE_VER = 'v1';
+const SUMMARY_TTL_SEC = 7 * 24 * 3600; // 7 days
 
 // Standardized error shape, mirroring /api/chat.
 function errorResponse(status, code, message, extra = {}) {
@@ -17,7 +26,7 @@ function errorResponse(status, code, message, extra = {}) {
 // `key`, never a URL — so this can't be turned into an SSRF probe.
 const COLLEGES = {
   niat: {
-    name: 'NIAT (NxtWave Institute of Advanced Technologies)',
+    name: 'NIAT (NxtWave of Innovation in Advanced Technologies)',
     url: 'https://www.niatindia.com/',
   },
   scaler: {
@@ -41,17 +50,6 @@ const COLLEGES = {
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_HTML_BYTES = 800_000;
 const MAX_TEXT_CHARS = 6000;
-
-const clientIp = (req) => {
-  const real = req.headers.get('x-real-ip');
-  if (real) return real.trim();
-  const xff = req.headers.get('x-forwarded-for');
-  if (xff) {
-    const hops = xff.split(',').map((s) => s.trim()).filter(Boolean);
-    if (hops.length) return hops[hops.length - 1];
-  }
-  return 'unknown';
-};
 
 // Pull a readable text digest out of raw HTML: drop scripts/styles, capture the
 // <title> + meta description, strip the remaining tags, decode a few common
@@ -151,6 +149,14 @@ export async function POST(req) {
     return errorResponse(503, 'service_busy', 'We are experiencing high demand right now. Please try again shortly.');
   }
 
+  // Cache hit → return the stored summary without fetching the site or calling
+  // Gemini. Returns null when Redis is unavailable, so we fall through to generate.
+  const cacheKey = `college:summary:${SUMMARY_CACHE_VER}:${key}`;
+  const cachedSummary = await redisGet(cacheKey);
+  if (cachedSummary) {
+    return Response.json({ name: college.name, url: college.url, summary: cachedSummary });
+  }
+
   const siteText = await fetchSiteText(college.url);
 
   // Ground the summary in the scraped text; when the site is a thin JS shell we
@@ -190,6 +196,9 @@ Rules:
     if (!summary) {
       return errorResponse(502, 'empty_summary', 'Could not summarize this college right now. Please try again.');
     }
+    // Store for the next click. Fire-and-forget: never let a cache write failure
+    // break the response the user is waiting on.
+    redisSetEx(cacheKey, summary, SUMMARY_TTL_SEC).catch(() => {});
     return Response.json({ name: college.name, url: college.url, summary });
   } catch (error) {
     console.error('College summary error:', error);
