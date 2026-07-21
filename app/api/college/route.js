@@ -10,7 +10,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key-fo
 // so we cache each generated summary in Redis and serve repeat clicks for free
 // (no site fetch, no Gemini call). Bump SUMMARY_CACHE_VER to force a refresh if
 // the prompt or a college's facts change. Degrades gracefully when Redis is off.
-const SUMMARY_CACHE_VER = 'v1';
+const SUMMARY_CACHE_VER = 'v2';
 const SUMMARY_TTL_SEC = 7 * 24 * 3600; // 7 days
 
 // Standardized error shape, mirroring /api/chat.
