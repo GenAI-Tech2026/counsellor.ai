@@ -270,7 +270,7 @@ const TOPPER_COLLEGES = [
   {
     key: 'niat',
     name: 'NIAT',
-    full: 'NIAT (NxtWave Institute of Advanced Technologies)',
+    full: 'NIAT (NxtWave of Innovation in Advanced Technologies)',
     location: 'Hyderabad',
     tag: 'Industry-built CS',
     desc: 'Outcome-driven 4-year CS program with a hands-on, job-ready curriculum.',

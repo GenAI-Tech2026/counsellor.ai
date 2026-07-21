@@ -26,7 +26,7 @@ function errorResponse(status, code, message, extra = {}) {
 // `key`, never a URL — so this can't be turned into an SSRF probe.
 const COLLEGES = {
   niat: {
-    name: 'NIAT (NxtWave Institute of Advanced Technologies)',
+    name: 'NIAT (NxtWave of Innovation in Advanced Technologies)',
     url: 'https://www.niatindia.com/',
   },
   scaler: {
