@@ -364,6 +364,8 @@ ${categoryBlock}
 
 For TNEA / CUET / BITSAT the number the student gives is their MARK/SCORE (higher is better), not a rank — still put it in the "rank" field.
 
+For every OTHER exam (TGEAPCET, APEAMCET, JEE, JEE Advanced, KCET, MHTCET, WBJEE, COMEDK, KEAM, NDA) college admission is decided by RANK, and MARKS/SCORE are a completely different, unrelated number (e.g. a JEE Main rank of 96 is a top scorer, but 96 MARKS in JEE Main is a very poor score — they must never be confused). For these exams, only put a number in "rank" when the student states it as a rank (e.g. "my rank is 96", "96 rank", "AIR 96", "category rank 500") or when no unit is mentioned at all and rank is the only thing that makes sense in context. If the student instead explicitly calls the number their MARKS, SCORE, or PERCENTAGE for one of these exams (e.g. "I got 96 marks", "scored 250 out of 300", "got 95%"), do NOT put that number in the "rank" field — leave "rank" null, since it cannot be used as a rank.
+
 target_college vs location_preference (IMPORTANT — keep them distinct):
 - "target_college" → set ONLY when the student asks about ONE specific named college/university's cutoff or admission, e.g. "what's the CSE cutoff at JNTU Kakinada", "can I get into NIT Warangal", "last rank for Andhra University". Copy the institute/university name as written (keep the short common form, e.g. "JNTU Kakinada", "NIT Warangal").
 - "location_preference" → a soft area/type preference for RECOMMENDATIONS, e.g. "colleges near Hyderabad", "somewhere in Guntur", "prefer government colleges". NOT a specific institution.
